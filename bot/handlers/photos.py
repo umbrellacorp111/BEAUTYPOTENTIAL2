@@ -3,6 +3,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from bot.states.user_states import UserState
+from bot.db.queries import update_user
 from bot.texts.registration import *
 from bot.keyboards.inline import *
 
