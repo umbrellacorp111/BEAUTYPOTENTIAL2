@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from sqlalchemy import text
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from bot.config import config
@@ -13,6 +14,10 @@ logging.basicConfig(level=logging.INFO)
 async def on_startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        try:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN credits INTEGER NOT NULL DEFAULT 0"))
+        except Exception:
+            pass
 
 
 async def on_shutdown():
