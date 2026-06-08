@@ -14,10 +14,12 @@ logging.basicConfig(level=logging.INFO)
 async def on_startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        try:
-            await conn.execute(text("ALTER TABLE users ADD COLUMN credits INTEGER NOT NULL DEFAULT 0"))
-        except Exception:
-            pass
+        result = await conn.execute(text("PRAGMA table_info(users)"))
+        rows = result.all()
+        cols = {row[1] for row in rows}
+        if "credits" not in cols:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN credits INTEGER DEFAULT 0"))
+            logging.info("Added column 'credits' to users table")
 
 
 async def on_shutdown():
