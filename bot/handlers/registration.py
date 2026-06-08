@@ -38,7 +38,6 @@ async def process_goal_toggle(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     data = await state.get_data()
     selected = data.get("selected_goals", [])
-    goal_cb = callback.data
     goal_map = {
         "goal_face": "Лицо / черты",
         "goal_style": "Стиль одежды",
@@ -47,11 +46,10 @@ async def process_goal_toggle(callback: CallbackQuery, state: FSMContext):
         "goal_confidence": "Уверенность в себе",
         "goal_other": "Другое",
     }
-    goal_text = goal_map.get(goal_cb)
+    goal_text = goal_map.get(callback.data)
     if not goal_text:
         return
-    if goal_cb == "goal_other":
-        await state.set_state(UserState.goals)
+    if callback.data == "goal_other":
         await callback.message.answer(GOALS_OTHER_PROMPT)
         return
     if goal_text in selected:
@@ -111,3 +109,11 @@ async def edit_photos(callback: CallbackQuery, state: FSMContext):
     await state.update_data(photo_ids=[])
     await state.set_state(UserState.photos)
     await callback.message.answer(PHOTOS_PROMPT, reply_markup=photo_skip_keyboard())
+
+
+@router.callback_query(F.data == "edit_back")
+async def edit_back(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await state.set_state(UserState.confirm)
+    from bot.handlers.photos import show_confirm
+    await show_confirm(callback.message, state)

@@ -1,11 +1,15 @@
+import os
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from bot.states.user_states import UserState
-from bot.db.queries import update_user
 from bot.texts.registration import *
+from bot.texts.sales import FREE_ANALYSIS_TEXT
 from bot.keyboards.inline import *
+from bot.db.queries import update_user, get_user
+from bot.utils.stub_analysis import generate_free_analysis, generate_full_report
+from bot.config import config
 
 router = Router()
 
@@ -94,13 +98,18 @@ async def confirm_yes(callback: CallbackQuery, state: FSMContext):
         photo_ids=data.get("photo_ids", []),
         status="new",
     )
-    from bot.texts.sales import SALES_TEXT
-    from bot.keyboards.inline import payment_choice_keyboard
-    await state.set_state(UserState.payment_method)
-    await callback.message.answer(SALES_TEXT)
-    await callback.message.answer(
-        "Выбери способ оплаты:", reply_markup=payment_choice_keyboard()
+    age = data.get("age", 25)
+    goals = data.get("selected_goals", [])
+    analysis = generate_free_analysis(age, goals)
+    text = FREE_ANALYSIS_TEXT.format(
+        potential=analysis["current_potential"],
+        zone=analysis["growth_zone"],
+        mistake=analysis["mistake"],
+        after=analysis["potential_after"],
     )
+    await state.set_state(UserState.free_shown)
+    await state.update_data(free_analysis=analysis)
+    await callback.message.answer(text, reply_markup=free_analysis_keyboard())
 
 
 @router.callback_query(F.data == "confirm_edit", StateFilter(UserState.confirm))
@@ -109,8 +118,63 @@ async def confirm_edit(callback: CallbackQuery, state: FSMContext):
     await callback.message.answer(EDIT_CHOICE, reply_markup=edit_choice_keyboard())
 
 
-@router.callback_query(F.data == "edit_back")
-async def edit_back(callback: CallbackQuery, state: FSMContext):
+@router.callback_query(F.data == "buy_full_report", StateFilter(UserState.free_shown))
+async def buy_full_report(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    await state.set_state(UserState.confirm)
-    await show_confirm(callback.message, state)
+    user = await get_user(callback.from_user.id)
+    balance = user.credits if user else 0
+    if balance > 0:
+        await state.set_state(UserState.credits_menu)
+        from bot.texts.payment import USE_CREDIT_PROMPT
+        await callback.message.answer(
+            USE_CREDIT_PROMPT.format(balance=balance),
+            reply_markup=use_credit_keyboard(),
+        )
+    else:
+        await state.set_state(UserState.credits_menu)
+        from bot.texts.sales import CREDIT_HEADER
+        await callback.message.answer(
+            CREDIT_HEADER,
+            reply_markup=credit_packages_keyboard(0),
+        )
+
+
+@router.callback_query(F.data == "use_credit_yes", StateFilter(UserState.credits_menu))
+async def use_credit_yes(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    user = await get_user(callback.from_user.id)
+    if not user or not user.credits or user.credits < 1:
+        await callback.message.answer("Недостаточно кредитов.")
+        return
+    await update_user(callback.from_user.id, credits=user.credits - 1)
+    data = await state.get_data()
+    age = data.get("age", 25)
+    goals = data.get("selected_goals", [])
+    name = data.get("name", "")
+    report = generate_full_report(age, goals)
+    await update_user(callback.from_user.id, result_text=report, status="completed")
+    await save_report_file(callback.from_user.id, report)
+    from bot.texts.result import FULL_REPORT_HEADER, FULL_REPORT_FOOTER
+    full = FULL_REPORT_HEADER.format(name=name) + "\n" + report + "\n" + FULL_REPORT_FOOTER
+    await state.set_state(UserState.result)
+    await callback.message.answer(full, reply_markup=after_report_keyboard())
+
+
+@router.callback_query(F.data == "use_credit_no", StateFilter(UserState.credits_menu))
+async def use_credit_no(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    user = await get_user(callback.from_user.id)
+    balance = user.credits if user else 0
+    from bot.texts.sales import CREDIT_HEADER
+    await callback.message.answer(
+        CREDIT_HEADER,
+        reply_markup=credit_packages_keyboard(balance),
+    )
+
+
+async def save_report_file(telegram_id: int, report: str):
+    orders_dir = os.path.join(config.DATA_DIR, "reports")
+    os.makedirs(orders_dir, exist_ok=True)
+    filepath = os.path.join(orders_dir, f"report_{telegram_id}.txt")
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(report)

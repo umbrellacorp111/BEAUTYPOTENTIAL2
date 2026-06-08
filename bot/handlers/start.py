@@ -1,6 +1,6 @@
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
-from aiogram.filters import CommandStart, StateFilter
+from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from bot.texts.welcome import WELCOME_TEXT
 from bot.keyboards.inline import start_keyboard
@@ -26,6 +26,14 @@ async def cmd_start(message: Message, state: FSMContext):
 @router.callback_query(F.data == "start_survey")
 async def start_survey(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    from bot.texts.registration import NAME_PROMPT
     await state.set_state(UserState.name)
+    from bot.texts.registration import NAME_PROMPT
     await callback.message.answer(NAME_PROMPT)
+
+
+@router.callback_query(F.data == "go_home")
+async def go_home(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await state.clear()
+    from bot.texts.welcome import WELCOME_TEXT
+    await callback.message.answer(WELCOME_TEXT, reply_markup=start_keyboard())

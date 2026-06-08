@@ -18,6 +18,7 @@ class User(Base):
     goals = Column(JSON, nullable=True, default=list)
     photo_ids = Column(JSON, nullable=True, default=list)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="new")
+    credits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     payment_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
     payment_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     payment_amount: Mapped[float | None] = mapped_column(Float, nullable=True)

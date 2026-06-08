@@ -27,7 +27,7 @@ def goals_keyboard() -> InlineKeyboardMarkup:
 
 def photo_skip_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="📷 Пропустить доп. фото", callback_data="photo_skip")
+    builder.button(text="📷 Пропустить", callback_data="photo_skip")
     return builder.as_markup()
 
 
@@ -56,55 +56,41 @@ def edit_choice_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def payment_choice_keyboard(back: bool = True) -> InlineKeyboardMarkup:
+def free_analysis_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="⭐ Telegram Stars (299 ★)", callback_data="pay_stars")
-    builder.button(text="💳 Банковская карта (1 199 ₽)", callback_data="pay_yukassa")
-    if back:
-        builder.button(text="🔙 Назад", callback_data="pay_back")
+    builder.button(text="🔥 Открыть полный отчёт", callback_data="buy_full_report")
+    return builder.as_markup()
+
+
+def credit_packages_keyboard(balance: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="1 анализ — 99₽ (25 ★)", callback_data="buy_1")
+    builder.button(text="5 анализов — 390₽ (100 ★)", callback_data="buy_5")
+    builder.button(text="15 анализов — 990₽ (250 ★)", callback_data="buy_15")
     builder.adjust(1)
     return builder.as_markup()
 
 
-def yukassa_keyboard(payment_url: str) -> InlineKeyboardMarkup:
+def payment_choice_keyboard(package_index: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="💳 Оплатить 1 199 ₽", url=payment_url)
-    builder.button(text="✅ Я оплатил", callback_data="yukassa_check")
+    builder.button(text="⭐ Telegram Stars", callback_data=f"pay_stars_{package_index}")
+    builder.button(text="💳 Картой", callback_data=f"pay_card_{package_index}")
     builder.button(text="🔙 Назад", callback_data="pay_back")
     builder.adjust(1)
     return builder.as_markup()
 
 
-def feedback_keyboard() -> InlineKeyboardMarkup:
+def use_credit_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="📞 Да, хочу консультацию", callback_data="fb_consult")
-    builder.button(text="🔄 Пройти разбор заново", callback_data="fb_retry")
-    builder.button(text="✖️ Нет, спасибо", callback_data="fb_no")
+    builder.button(text="✅ Да, сделать разбор", callback_data="use_credit_yes")
+    builder.button(text="🔙 Назад", callback_data="use_credit_no")
     builder.adjust(1)
     return builder.as_markup()
 
 
-def admin_main_keyboard() -> InlineKeyboardMarkup:
+def after_report_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="📋 Список заявок", callback_data="admin_list")
-    builder.button(text="🆕 Новые заявки", callback_data="admin_new")
-    builder.button(text="📊 Статистика", callback_data="admin_stats")
+    builder.button(text="🔄 Новый разбор", callback_data="start_survey")
+    builder.button(text="🏠 В начало", callback_data="go_home")
     builder.adjust(1)
-    return builder.as_markup()
-
-
-def admin_application_keyboard(user_id: int) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text="📸 Показать фото", callback_data=f"admin_show_photo_{user_id}")
-    builder.button(text="✅ В работу", callback_data=f"admin_work_{user_id}")
-    builder.button(text="❌ Отменить", callback_data=f"admin_cancel_{user_id}")
-    builder.button(text="📤 Загрузить результат", callback_data=f"admin_result_{user_id}")
-    builder.button(text="🔙 Назад", callback_data="admin_back_list")
-    builder.adjust(1)
-    return builder.as_markup()
-
-
-def admin_back_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🔙 Назад", callback_data="admin_back")
     return builder.as_markup()
