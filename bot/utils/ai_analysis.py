@@ -89,7 +89,7 @@ async def free_analysis(bot, photo_ids: list[str], name: str, age: int, goals: l
             })
         logger.info("Free analysis: sending to GPT-4o-mini...")
         resp = await c.chat.completions.create(
-            model="gpt-5.4-mini",
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": content}],
             max_tokens=500,
         )
@@ -129,7 +129,7 @@ async def full_report(bot, photo_ids: list[str], name: str, age: int, goals: lis
             })
         logger.info("Full report: sending to GPT-4o-mini...")
         resp = await c.chat.completions.create(
-            model="gpt-5.4-mini",
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": content}],
             max_tokens=2000,
         )
