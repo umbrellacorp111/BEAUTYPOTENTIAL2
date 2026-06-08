@@ -1,0 +1,12 @@
+from aiogram.fsm.state import State, StatesGroup
+
+
+class UserState(StatesGroup):
+    name = State()
+    age = State()
+    goals = State()
+    photos = State()
+    confirm = State()
+    payment_method = State()
+    awaiting_payment = State()
+    paid = State()
