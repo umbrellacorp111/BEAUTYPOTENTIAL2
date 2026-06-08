@@ -10,11 +10,11 @@ logger = logging.getLogger(__name__)
 FREE_PROMPT = (
     "Ты — эксперт по анализу внешности. Оцени человека по фото.\n"
     "Параметры: имя={name}, возраст={age}, цели={goals}.\n\n"
-    "Верни ТОЛЬКО JSON без пояснений. Поля:\n"
-    '- "current_potential": число 0-100\n'
-    '- "growth_zone": строка — главная зона роста\n'
-    '- "mistake": строка — главная ошибка\n'
-    '- "potential_after": число 0-100\n\n"
+    "Верни ТОЛЬКО JSON без пояснений. Ключи:\n"
+    "current_potential: число 0-100\n"
+    "growth_zone: строка — главная зона роста\n"
+    "mistake: строка — главная ошибка\n"
+    "potential_after: число 0-100\n\n"
     "Будь честным, конструктивным, без лести."
 )
 
@@ -89,7 +89,7 @@ async def free_analysis(bot, photo_ids: list[str], name: str, age: int, goals: l
             })
         logger.info("Free analysis: sending to GPT-4o-mini...")
         resp = await c.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5.4-mini",
             messages=[{"role": "user", "content": content}],
             max_tokens=500,
         )
@@ -129,7 +129,7 @@ async def full_report(bot, photo_ids: list[str], name: str, age: int, goals: lis
             })
         logger.info("Full report: sending to GPT-4o-mini...")
         resp = await c.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5.4-mini",
             messages=[{"role": "user", "content": content}],
             max_tokens=2000,
         )
