@@ -1,5 +1,6 @@
 import base64
 import json
+import re
 import logging
 from openai import AsyncOpenAI
 from bot.config import config
@@ -8,29 +9,26 @@ logger = logging.getLogger(__name__)
 
 FREE_PROMPT = (
     "Ты — эксперт по анализу внешности. Оцени человека по фото.\n"
-    "Верни ТОЛЬКО JSON без пояснений в формате:\n"
-    "{\n"
-    '  "current_potential": число от 0 до 100,\n'
-    '  "growth_zone": "одна фраза — главная зона роста",\n'
-    '  "mistake": "одна фраза — главная ошибка в образе",\n'
-    '  "potential_after": число от 0 до 100\n'
-    "}\n"
-    "Параметры: имя={name}, возраст={age}, цели={goals}.\n"
+    "Параметры: имя={name}, возраст={age}, цели={goals}.\n\n"
+    "Верни ТОЛЬКО JSON без пояснений. Поля:\n"
+    '- "current_potential": число 0-100\n'
+    '- "growth_zone": строка — главная зона роста\n'
+    '- "mistake": строка — главная ошибка\n'
+    '- "potential_after": число 0-100\n\n"
     "Будь честным, конструктивным, без лести."
 )
 
 FULL_PROMPT = (
-    "Ты — эксперт по анализу внешности. Составь подробный персональный разбор человека по фото.\n"
+    "Ты — эксперт по анализу внешности. Составь подробный разбор человека по фото.\n"
     "Параметры: имя={name}, возраст={age}, цели={goals}.\n\n"
-    "Напиши разбор в свободной форме, включив:\n"
+    "Напиши на русском, дружелюбно, конкретно. Включи:\n"
     "1. Оценку текущего потенциала в %\n"
-    "2. 3 сильные стороны внешности\n"
-    "3. Главную ошибку в образе\n"
-    "4. 3 точки роста, которые дадут 80% результата\n"
-    "5. Прогноз результата после изменений в %\n"
-    "6. Пошаговый план действий (5-7 шагов)\n"
-    "7. Персональные рекомендации\n\n"
-    "Пиши на русском, дружелюбно, конкретно, без воды."
+    "2. 3 сильные стороны\n"
+    "3. Главную ошибку\n"
+    "4. 3 точки роста (80% результата)\n"
+    "5. Прогноз после изменений в %\n"
+    "6. Пошаговый план (5-7 шагов)\n"
+    "7. Рекомендации"
 )
 
 client: AsyncOpenAI | None = None
@@ -39,15 +37,41 @@ client: AsyncOpenAI | None = None
 def get_client() -> AsyncOpenAI:
     global client
     if client is None:
-        client = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
+        api_key = config.OPENAI_API_KEY
+        if not api_key:
+            logger.error("OPENAI_API_KEY is not set!")
+        client = AsyncOpenAI(api_key=api_key)
     return client
 
 
 async def _photo_to_base64(bot, file_id: str) -> str:
     file = await bot.get_file(file_id)
-    file_bytes = await bot.download_file(file.file_path)
+    tg_path = file.file_path
+    if not tg_path:
+        raise ValueError(f"No file_path for file_id {file_id}")
+    file_bytes = await bot.download_file(tg_path)
     data = file_bytes.read()
     return base64.b64encode(data).decode("utf-8")
+
+
+def _extract_json(text: str) -> dict | None:
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1]
+        text = text.rsplit("```", 1)[0]
+        text = text.strip()
+        if text.startswith("json"):
+            text = text[4:].strip()
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            pass
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return None
 
 
 async def free_analysis(bot, photo_ids: list[str], name: str, age: int, goals: list[str]) -> dict:
@@ -63,17 +87,17 @@ async def free_analysis(bot, photo_ids: list[str], name: str, age: int, goals: l
                 "type": "image_url",
                 "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
             })
+        logger.info("Free analysis: sending to GPT-4o-mini...")
         resp = await c.chat.completions.create(
-            model="gpt-5.4-mini",
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": content}],
             max_tokens=500,
         )
         text = resp.choices[0].message.content.strip()
-        if "```" in text:
-            text = text.split("```")[1]
-            if text.startswith("json"):
-                text = text[4:]
-        data = json.loads(text.strip())
+        logger.info(f"Free analysis raw response: {text[:300]}")
+        data = _extract_json(text)
+        if not data:
+            raise ValueError(f"No valid JSON in response")
         return {
             "current_potential": data.get("current_potential", 50),
             "growth_zone": data.get("growth_zone", "не определено"),
@@ -81,7 +105,7 @@ async def free_analysis(bot, photo_ids: list[str], name: str, age: int, goals: l
             "potential_after": data.get("potential_after", 75),
         }
     except Exception as e:
-        logger.error(f"AI free analysis error: {e}")
+        logger.error(f"AI free analysis error: {e}", exc_info=True)
         return {
             "current_potential": 50,
             "growth_zone": "требуется повторный анализ",
@@ -103,12 +127,15 @@ async def full_report(bot, photo_ids: list[str], name: str, age: int, goals: lis
                 "type": "image_url",
                 "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
             })
+        logger.info("Full report: sending to GPT-4o-mini...")
         resp = await c.chat.completions.create(
-            model="gpt-5.4-mini",
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": content}],
             max_tokens=2000,
         )
-        return resp.choices[0].message.content.strip()
+        result = resp.choices[0].message.content.strip()
+        logger.info(f"Full report received, length={len(result)}")
+        return result
     except Exception as e:
-        logger.error(f"AI full report error: {e}")
-        return "Извините, произошла ошибка при генерации разбора. Попробуйте позже."
+        logger.error(f"AI full report error: {e}", exc_info=True)
+        return "❌ Ошибка при генерации разбора. Проверь, что OpenAI API ключ работает и на балансе есть средства."
