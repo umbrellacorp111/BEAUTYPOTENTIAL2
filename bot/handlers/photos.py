@@ -1,5 +1,5 @@
 import os
-from aiogram import Router, F
+from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
@@ -8,7 +8,7 @@ from bot.texts.registration import *
 from bot.texts.sales import FREE_ANALYSIS_TEXT
 from bot.keyboards.inline import *
 from bot.db.queries import update_user, get_user
-from bot.utils.stub_analysis import generate_free_analysis, generate_full_report
+from bot.utils.ai_analysis import free_analysis, full_report
 from bot.config import config
 
 router = Router()
@@ -87,7 +87,7 @@ async def show_confirm(message: Message, state: FSMContext):
 
 
 @router.callback_query(F.data == "confirm_yes", StateFilter(UserState.confirm))
-async def confirm_yes(callback: CallbackQuery, state: FSMContext):
+async def confirm_yes(callback: CallbackQuery, state: FSMContext, bot: Bot):
     await callback.answer()
     data = await state.get_data()
     await update_user(
@@ -100,7 +100,10 @@ async def confirm_yes(callback: CallbackQuery, state: FSMContext):
     )
     age = data.get("age", 25)
     goals = data.get("selected_goals", [])
-    analysis = generate_free_analysis(age, goals)
+    name = data.get("name", "")
+    photo_ids = data.get("photo_ids", [])
+    await callback.message.answer("🔍 Анализирую твои фото... это займёт несколько секунд.")
+    analysis = await free_analysis(bot, photo_ids, name, age, goals)
     text = FREE_ANALYSIS_TEXT.format(
         potential=analysis["current_potential"],
         zone=analysis["growth_zone"],
@@ -140,7 +143,7 @@ async def buy_full_report(callback: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(F.data == "use_credit_yes", StateFilter(UserState.credits_menu))
-async def use_credit_yes(callback: CallbackQuery, state: FSMContext):
+async def use_credit_yes(callback: CallbackQuery, state: FSMContext, bot: Bot):
     await callback.answer()
     user = await get_user(callback.from_user.id)
     if not user or not user.credits or user.credits < 1:
@@ -151,7 +154,9 @@ async def use_credit_yes(callback: CallbackQuery, state: FSMContext):
     age = data.get("age", 25)
     goals = data.get("selected_goals", [])
     name = data.get("name", "")
-    report = generate_full_report(age, goals)
+    photo_ids = data.get("photo_ids", [])
+    await callback.message.answer("🤖 Нейросеть анализирует твои фото... это займёт до 30 секунд.")
+    report = await full_report(bot, photo_ids, name, age, goals)
     await update_user(callback.from_user.id, result_text=report, status="completed")
     await save_report_file(callback.from_user.id, report)
     from bot.texts.result import FULL_REPORT_HEADER, FULL_REPORT_FOOTER

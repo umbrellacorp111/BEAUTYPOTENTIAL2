@@ -10,6 +10,7 @@ class Config:
     DATA_DIR: str = os.getenv("DATA_DIR", "data")
     YUKASSA_PROVIDER_TOKEN: str = os.getenv("YUKASSA_PROVIDER_TOKEN", "")
     YUKASSA_SHOP_ID: str = os.getenv("YUKASSA_SHOP_ID", "")
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     SUPPORT_USERNAME: str = os.getenv("SUPPORT_USERNAME", "@support")
     BOT_LINK: str = os.getenv("BOT_LINK", "https://t.me/bot")
 

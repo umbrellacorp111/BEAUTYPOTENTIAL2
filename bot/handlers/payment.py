@@ -11,7 +11,6 @@ from bot.texts.payment import *
 from bot.texts.sales import CREDIT_HEADER
 from bot.keyboards.inline import *
 from bot.db.queries import update_user, get_user, add_credits
-from bot.utils.stub_analysis import generate_full_report
 
 router = Router()
 
