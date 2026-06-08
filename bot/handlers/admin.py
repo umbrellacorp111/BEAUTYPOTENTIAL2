@@ -211,7 +211,7 @@ async def admin_result_receive(message: Message, state: FSMContext):
 
 
 async def update_user_by_id_direct(user_id: int, **kwargs):
-    from sqlalchemy import select, update
+    from sqlalchemy import update
     from bot.db.session import async_session
     from bot.db.models import User
     async with async_session() as session:

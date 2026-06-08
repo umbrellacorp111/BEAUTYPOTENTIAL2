@@ -1,13 +1,13 @@
 # Потенциал внешности — Telegram Bot
 
 Бот для продажи персонального разбора внешности.
-Стек: Python 3.11, Aiogram 3, PostgreSQL, SQLAlchemy async.
+Стек: Python 3.11, Aiogram 3, SQLite (aiosqlite), SQLAlchemy async.
 
 ## Быстрый запуск
 
 ```bash
 cp .env.example .env
-# заполнить .env
+# заполнить .env (BOT_TOKEN, ADMIN_CHAT_ID)
 python -m bot.main
 ```
 
@@ -15,17 +15,14 @@ python -m bot.main
 
 1. Создай репозиторий на GitHub и залей туда этот код
 2. Зарегистрируйся на [bothost.ru](https://bothost.ru)
-3. Создай проект → выбери GitHub → подключи репозиторий
-4. В настройках проекта добавь переменные окружения (см. `.env.example`):
-   - `BOT_TOKEN` — токен бота от @BotFather
-   - `ADMIN_CHAT_ID` — твой Telegram ID
-   - `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASS` — данные PostgreSQL
-   - `YUKASSA_PROVIDER_TOKEN` — токен ЮKassa (если используешь)
-5. Нажми "Развернуть" — бот запустится автоматически
-6. При каждом пуше в `main` бот будет обновляться автоматически
+3. Создай проект → GitHub → подключи репозиторий → ветка `main`
+4. В настройках проекта → **Env vars** → вставь содержимое `.env` и замени значения:
+   - `BOT_TOKEN` — токен от @BotFather
+   - `ADMIN_CHAT_ID` — твой Telegram ID (узнать у @userinfobot)
+   - `DATA_DIR=/app/data` — постоянное хранилище (работает на платных тарифах)
+5. Нажми "Развернуть"
 
-> **База данных:** bothost не предоставляет PostgreSQL на бесплатном тарифе. 
-> Используй внешний провайдер (Supabase, Railway, ElephantSQL) или подключи тариф с managed DB.
+> На платных тарифах bothost данные сохраняются в `/app/data/bot.db` и не пропадают при перезапуске.
 
 ## Команды
 

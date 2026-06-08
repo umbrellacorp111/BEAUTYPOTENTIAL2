@@ -1,5 +1,5 @@
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import Column, BigInteger, String, Integer, Text, DateTime, Float, ARRAY, func
+from sqlalchemy import Column, BigInteger, String, Integer, Text, DateTime, Float, JSON, func
 
 
 class Base(DeclarativeBase):
@@ -15,8 +15,8 @@ class User(Base):
     first_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     age: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    goals = Column(ARRAY(String), nullable=True)
-    photo_ids = Column(ARRAY(String), nullable=True)
+    goals = Column(JSON, nullable=True, default=list)
+    photo_ids = Column(JSON, nullable=True, default=list)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="new")
     payment_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
     payment_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
