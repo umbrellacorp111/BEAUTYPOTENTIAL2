@@ -123,8 +123,15 @@ async def dialogue_message(message: Message, state: FSMContext, bot: Bot):
         return
     user_text = message.text.strip()
     msgs.append({"role": "user", "content": user_text})
-    if count >= 4:
-        name = data.get("name", "")
+    name = data.get("name", "")
+    age = data.get("age", 25)
+    goals = data.get("selected_goals", [])
+    system = build_dialogue_system(analysis, name, age, goals)
+    reply = await dialogue_continue(msgs, system)
+    msgs.append({"role": "assistant", "content": reply})
+    await state.update_data(dialogue_messages=msgs, dialogue_count=count + 1)
+    await message.answer(reply)
+    if count >= 3:
         text = FREE_ANALYSIS_TEXT.format(
             potential=analysis.get("current_potential", 50),
             zone=analysis.get("growth_zone", "—"),
@@ -137,15 +144,6 @@ async def dialogue_message(message: Message, state: FSMContext, bot: Bot):
             reply_markup=free_analysis_keyboard(),
         )
         await message.answer(text)
-        return
-    name = data.get("name", "")
-    age = data.get("age", 25)
-    goals = data.get("selected_goals", [])
-    system = build_dialogue_system(analysis, name, age, goals)
-    reply = await dialogue_continue(msgs, system)
-    msgs.append({"role": "assistant", "content": reply})
-    await state.update_data(dialogue_messages=msgs, dialogue_count=count + 1)
-    await message.answer(reply)
 
 
 @router.callback_query(F.data == "confirm_edit", StateFilter(UserState.confirm))
