@@ -40,6 +40,7 @@ def get_client() -> AsyncOpenAI:
         api_key = config.OPENAI_API_KEY
         if not api_key:
             logger.error("OPENAI_API_KEY is not set!")
+        logger.info(f"OPENAI_API_KEY loaded, starts with: {api_key[:15] if api_key else 'EMPTY'}")
         client = AsyncOpenAI(api_key=api_key)
     return client
 
