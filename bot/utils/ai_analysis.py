@@ -7,128 +7,11 @@ from bot.config import config
 
 logger = logging.getLogger(__name__)
 
-FREE_PROMPT = (
-    "Ты — эксперт по анализу внешности. Оцени человека по фото.\n"
-    "Параметры: имя={name}, возраст={age}, цели={goals}.\n"
-    "Разрешённый режим: FACE_ANALYSIS_ONLY — оценивай только черты лица.\n\n"
-    "Верни ТОЛЬКО JSON без пояснений. Ключи:\n"
-    "current_potential: число 0-100\n"
-    "growth_zone: строка — главная зона роста (только лицо)\n"
-    "mistake: строка — главная ошибка (только лицо)\n"
-    "potential_after: число 0-100\n\n"
-    "Будь честным, конструктивным, без лести."
-)
-
-FULL_PROMPT = (
-    "Ты — профессиональный AI-ассистент по анализу внешности.\n"
-    "Разрешённый режим: FACE_ANALYSIS_ONLY.\n"
-    "Параметры: имя={name}, возраст={age}, цели={goals}.\n\n"
-    "Составь подробный разбор человека по фото (только черты лица).\n"
-    "Напиши на русском, дружелюбно, конкретно. Включи:\n"
-    "1. Оценку текущего потенциала в %\n"
-    "2. 3 сильные стороны\n"
-    "3. Главную ошибку\n"
-    "4. 3 точки роста (80% результата)\n"
-    "5. Прогноз после изменений в %\n"
-    "6. Пошаговый план (5-7 шагов)\n"
-    "7. Рекомендации\n\n"
-    "Запрещено: анализ тела, фигуры, веса, осанки, одежды, стиля, гардероба, прически как отдельной темы."
-)
-
-client: AsyncOpenAI | None = None
-
-
-def get_client() -> AsyncOpenAI:
-    global client
-    if client is None:
-        api_key = config.OPENAI_API_KEY
-        if not api_key:
-            logger.error("OPENAI_API_KEY is not set!")
-        logger.info(f"OPENAI_API_KEY loaded, starts with: {api_key[:15] if api_key else 'EMPTY'}")
-        client = AsyncOpenAI(api_key=api_key)
-    return client
-
-
-async def _photo_to_base64(bot, file_id: str) -> str:
-    file = await bot.get_file(file_id)
-    tg_path = file.file_path
-    if not tg_path:
-        raise ValueError(f"No file_path for file_id {file_id}")
-    file_bytes = await bot.download_file(tg_path)
-    data = file_bytes.read()
-    return base64.b64encode(data).decode("utf-8")
-
-
-def _extract_json(text: str) -> dict | None:
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[-1]
-        text = text.rsplit("```", 1)[0]
-        text = text.strip()
-        if text.startswith("json"):
-            text = text[4:].strip()
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group())
-        except json.JSONDecodeError:
-            pass
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        return None
-
-
-async def free_analysis(bot, photo_ids: list[str], name: str, age: int, goals: list[str],
-                         access_mode: str = MODE_FREE) -> dict:
-    try:
-        c = get_client()
-        goals_str = ", ".join(goals) if goals else "не указано"
-        system = build_system_prompt(access_mode)
-        content = [
-            {"type": "text", "text": FREE_PROMPT.format(name=name, age=age, goals=goals_str)},
-        ]
-        for fid in photo_ids[:2]:
-            b64 = await _photo_to_base64(bot, fid)
-            content.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
-            })
-        logger.info("Free analysis: sending to GPT-4o-mini...")
-        resp = await c.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": content},
-            ],
-            max_tokens=500,
-        )
-        text = resp.choices[0].message.content.strip()
-        logger.info(f"Free analysis raw response: {text[:300]}")
-        data = _extract_json(text)
-        if not data:
-            raise ValueError(f"No valid JSON in response")
-        return {
-            "current_potential": data.get("current_potential", 50),
-            "growth_zone": data.get("growth_zone", "не определено"),
-            "mistake": data.get("mistake", "не определено"),
-            "potential_after": data.get("potential_after", 75),
-        }
-    except Exception as e:
-        logger.error(f"AI free analysis error: {e}", exc_info=True)
-        return {
-            "current_potential": 50,
-            "growth_zone": "требуется повторный анализ",
-            "mistake": "ошибка анализа, попробуйте снова",
-            "potential_after": 75,
-        }
-
+# ── режимы доступа ──────────────────────────────────────────────
 
 MODE_FREE = "free"
 MODE_PAID = "paid"
 MODE_PAYWALL = "paywall"
-
-MODE_FACE = "face"
 
 PAYWALL_TEXT = (
     "❌ Бесплатный лимит на разбор закончился\n\n"
@@ -201,6 +84,29 @@ ANTI_BYPASS = (
     "Ответ всегда: отказ + возврат к анализу лица."
 )
 
+DIALOGUE_SYSTEM = (
+    "Ты — эксперт-консультант по внешности. Ты уже проанализировал фото человека.\n"
+    "У тебя есть его данные: имя={name}, возраст={age}, цели={goals}.\n"
+    "Результаты анализа: потенциал {potential}%, зона роста: {zone}, ошибка: {mistake}, прогноз: {after}%.\n\n"
+    "Сейчас ты ведёшь короткий диалог 3-5 сообщений.\n"
+    "Правила:\n"
+    "- Не раскрывай полный анализ сразу\n"
+    "- Задавай уточняющие вопросы по внешности\n"
+    "- Отвечай на ответы, выстраивай беседу\n"
+    "- После 3-5 сообщений плавно подведи к тому, что полный отчёт готов\n"
+    "- Финальное сообщение должно предлагать открыть полный разбор\n"
+    "- Пиши на русском, дружелюбно, от первого лица"
+)
+
+DIALOGUE_CONTEXT_PROMPT = (
+    "\n\nДополнительный контекст из диалога с клиентом:\n{history}\n\n"
+    "Учти его ответы и вопросы при составлении разбора. "
+    "Особое внимание удели тому, что его волнует."
+)
+
+
+# ── helpers ──────────────────────────────────────────────────────
+
 
 def build_system_prompt(access_mode: str = MODE_FREE) -> str:
     mode_prompt = MODE_SYSTEM_PROMPTS.get(access_mode, MODE_SYSTEM_PROMPTS[MODE_FREE])
@@ -222,21 +128,6 @@ def check_mode_compliance(user_text: str) -> str | None:
     return None
 
 
-DIALOGUE_SYSTEM = (
-    "Ты — эксперт-консультант по внешности. Ты уже проанализировал фото человека.\n"
-    "У тебя есть его данные: имя={name}, возраст={age}, цели={goals}.\n"
-    "Результаты анализа: потенциал {potential}%, зона роста: {zone}, ошибка: {mistake}, прогноз: {after}%.\n\n"
-    "Сейчас ты ведёшь короткий диалог 3-5 сообщений.\n"
-    "Правила:\n"
-    "- Не раскрывай полный анализ сразу\n"
-    "- Задавай уточняющие вопросы по внешности\n"
-    "- Отвечай на ответы, выстраивай беседу\n"
-    "- После 3-5 сообщений плавно подведи к тому, что полный отчёт готов\n"
-    "- Финальное сообщение должно предлагать открыть полный разбор\n"
-    "- Пиши на русском, дружелюбно, от первого лица"
-)
-
-
 def build_dialogue_system(analysis: dict, name: str, age: int, goals: list[str],
                           access_mode: str = MODE_FREE) -> str:
     goals_str = ", ".join(goals) if goals else "не указано"
@@ -249,6 +140,133 @@ def build_dialogue_system(analysis: dict, name: str, age: int, goals: list[str],
     )
     mode_prompt = build_system_prompt(access_mode)
     return base + "\n\n" + mode_prompt
+
+
+# ── prompts ──────────────────────────────────────────────────────
+
+FREE_PROMPT = (
+    "Ты — эксперт по анализу внешности. Оцени человека по фото.\n"
+    "Параметры: имя={name}, возраст={age}, цели={goals}.\n"
+    "Разрешённый режим: FACE_ANALYSIS_ONLY — оценивай только черты лица.\n\n"
+    "Верни ТОЛЬКО JSON без пояснений. Ключи:\n"
+    "current_potential: число 0-100\n"
+    "growth_zone: строка — главная зона роста (только лицо)\n"
+    "mistake: строка — главная ошибка (только лицо)\n"
+    "potential_after: число 0-100\n\n"
+    "Будь честным, конструктивным, без лести."
+)
+
+FULL_PROMPT = (
+    "Ты — профессиональный AI-ассистент по анализу внешности.\n"
+    "Разрешённый режим: FACE_ANALYSIS_ONLY.\n"
+    "Параметры: имя={name}, возраст={age}, цели={goals}.\n\n"
+    "Составь подробный разбор человека по фото (только черты лица).\n"
+    "Напиши на русском, дружелюбно, конкретно. Включи:\n"
+    "1. Оценку текущего потенциала в %\n"
+    "2. 3 сильные стороны\n"
+    "3. Главную ошибку\n"
+    "4. 3 точки роста (80% результата)\n"
+    "5. Прогноз после изменений в %\n"
+    "6. Пошаговый план (5-7 шагов)\n"
+    "7. Рекомендации\n\n"
+    "Запрещено: анализ тела, фигуры, веса, осанки, одежды, стиля, гардероба, прически как отдельной темы."
+)
+
+
+# ── openai ───────────────────────────────────────────────────────
+
+client: AsyncOpenAI | None = None
+
+
+def get_client() -> AsyncOpenAI:
+    global client
+    if client is None:
+        api_key = config.OPENAI_API_KEY
+        if not api_key:
+            logger.error("OPENAI_API_KEY is not set!")
+        logger.info(f"OPENAI_API_KEY loaded, starts with: {api_key[:15] if api_key else 'EMPTY'}")
+        client = AsyncOpenAI(api_key=api_key)
+    return client
+
+
+async def _photo_to_base64(bot, file_id: str) -> str:
+    file = await bot.get_file(file_id)
+    tg_path = file.file_path
+    if not tg_path:
+        raise ValueError(f"No file_path for file_id {file_id}")
+    file_bytes = await bot.download_file(tg_path)
+    data = file_bytes.read()
+    return base64.b64encode(data).decode("utf-8")
+
+
+def _extract_json(text: str) -> dict | None:
+    text = text.strip()
+    if text.startswith("```"):
+        text = text.split("\n", 1)[-1]
+        text = text.rsplit("```", 1)[0]
+        text = text.strip()
+        if text.startswith("json"):
+            text = text[4:].strip()
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if match:
+        try:
+            return json.loads(match.group())
+        except json.JSONDecodeError:
+            pass
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return None
+
+
+# ── free analysis ────────────────────────────────────────────────
+
+async def free_analysis(bot, photo_ids: list[str], name: str, age: int, goals: list[str],
+                         access_mode: str = MODE_FREE) -> dict:
+    try:
+        c = get_client()
+        goals_str = ", ".join(goals) if goals else "не указано"
+        system = build_system_prompt(access_mode)
+        content = [
+            {"type": "text", "text": FREE_PROMPT.format(name=name, age=age, goals=goals_str)},
+        ]
+        for fid in photo_ids[:2]:
+            b64 = await _photo_to_base64(bot, fid)
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
+            })
+        logger.info("Free analysis: sending to GPT-4o-mini...")
+        resp = await c.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": content},
+            ],
+            max_tokens=500,
+        )
+        text = resp.choices[0].message.content.strip()
+        logger.info(f"Free analysis raw response: {text[:300]}")
+        data = _extract_json(text)
+        if not data:
+            raise ValueError(f"No valid JSON in response")
+        return {
+            "current_potential": data.get("current_potential", 50),
+            "growth_zone": data.get("growth_zone", "не определено"),
+            "mistake": data.get("mistake", "не определено"),
+            "potential_after": data.get("potential_after", 75),
+        }
+    except Exception as e:
+        logger.error(f"AI free analysis error: {e}", exc_info=True)
+        return {
+            "current_potential": 50,
+            "growth_zone": "требуется повторный анализ",
+            "mistake": "ошибка анализа, попробуйте снова",
+            "potential_after": 75,
+        }
+
+
+# ── dialogue ─────────────────────────────────────────────────────
 
 
 async def dialogue_start(analysis: dict, name: str, age: int, goals: list[str],
@@ -293,12 +311,7 @@ def _format_dialogue(messages: list[dict]) -> str:
     return "\n".join(lines)
 
 
-DIALOGUE_CONTEXT_PROMPT = (
-    "\n\nДополнительный контекст из диалога с клиентом:\n{history}\n\n"
-    "Учти его ответы и вопросы при составлении разбора. "
-    "Особое внимание удели тому, что его волнует."
-)
-
+# ── full report ──────────────────────────────────────────────────
 
 async def full_report(bot, photo_ids: list[str], name: str, age: int, goals: list[str],
                       dialogue_history: list[dict] | None = None,
