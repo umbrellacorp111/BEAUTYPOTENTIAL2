@@ -20,6 +20,9 @@ async def on_startup():
         if "credits" not in cols:
             await conn.execute(text("ALTER TABLE users ADD COLUMN credits INTEGER DEFAULT 0"))
             logging.info("Added column 'credits' to users table")
+        if "free_used" not in cols:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN free_used INTEGER DEFAULT 0"))
+            logging.info("Added column 'free_used' to users table")
 
 
 async def on_shutdown():

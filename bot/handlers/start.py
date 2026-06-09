@@ -3,7 +3,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from bot.texts.welcome import WELCOME_TEXT
-from bot.keyboards.inline import start_keyboard
+from bot.keyboards.inline import start_keyboard, credit_packages_keyboard, use_credit_keyboard
 from bot.db.queries import get_user, create_user
 from bot.states.user_states import UserState
 
@@ -26,6 +26,24 @@ async def cmd_start(message: Message, state: FSMContext):
 @router.callback_query(F.data == "start_survey")
 async def start_survey(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
+    user = await get_user(callback.from_user.id)
+    if user and user.free_used:
+        balance = user.credits or 0
+        if balance > 0:
+            from bot.texts.payment import USE_CREDIT_PROMPT
+            await state.set_state(UserState.credits_menu)
+            await callback.message.answer(
+                USE_CREDIT_PROMPT.format(balance=balance),
+                reply_markup=use_credit_keyboard(),
+            )
+        else:
+            await state.set_state(UserState.credits_menu)
+            from bot.texts.sales import CREDIT_HEADER
+            await callback.message.answer(
+                "🔒 Бесплатный разбор уже использован.\n\n" + CREDIT_HEADER,
+                reply_markup=credit_packages_keyboard(0),
+            )
+        return
     await state.set_state(UserState.name)
     from bot.texts.registration import NAME_PROMPT
     await callback.message.answer(NAME_PROMPT)

@@ -136,6 +136,7 @@ async def dialogue_message(message: Message, state: FSMContext, bot: Bot):
     await state.update_data(dialogue_messages=msgs, dialogue_count=count + 1)
     await message.answer(reply)
     if count >= 3:
+        await update_user(message.from_user.id, free_used=1)
         text = FREE_ANALYSIS_TEXT.format(
             potential=analysis.get("current_potential", 50),
             zone=analysis.get("growth_zone", "—"),
