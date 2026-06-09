@@ -7,6 +7,7 @@ class UserState(StatesGroup):
     goals = State()
     photos = State()
     confirm = State()
+    dialogue = State()
     free_shown = State()
     credits_menu = State()
     payment_method = State()

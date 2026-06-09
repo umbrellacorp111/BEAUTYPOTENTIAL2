@@ -8,7 +8,7 @@ from bot.texts.registration import *
 from bot.texts.sales import FREE_ANALYSIS_TEXT
 from bot.keyboards.inline import *
 from bot.db.queries import update_user, get_user
-from bot.utils.ai_analysis import free_analysis, full_report
+from bot.utils.ai_analysis import free_analysis, full_report, dialogue_start, dialogue_continue, build_dialogue_system
 from bot.config import config
 
 router = Router()
@@ -104,15 +104,48 @@ async def confirm_yes(callback: CallbackQuery, state: FSMContext, bot: Bot):
     photo_ids = data.get("photo_ids", [])
     await callback.message.answer("🔍 Анализирую твои фото... это займёт несколько секунд.")
     analysis = await free_analysis(bot, photo_ids, name, age, goals)
-    text = FREE_ANALYSIS_TEXT.format(
-        potential=analysis["current_potential"],
-        zone=analysis["growth_zone"],
-        mistake=analysis["mistake"],
-        after=analysis["potential_after"],
-    )
-    await state.set_state(UserState.free_shown)
     await state.update_data(free_analysis=analysis)
-    await callback.message.answer(text, reply_markup=free_analysis_keyboard())
+    await callback.message.answer("🤖 Анализ завершён. Прежде чем показать результат, задам пару вопросов.")
+    msg = await dialogue_start(analysis, name, age, goals)
+    await state.set_state(UserState.dialogue)
+    await state.update_data(dialogue_count=0, dialogue_messages=[])
+    await callback.message.answer(msg)
+
+
+@router.message(StateFilter(UserState.dialogue))
+async def dialogue_message(message: Message, state: FSMContext, bot: Bot):
+    data = await state.get_data()
+    count = data.get("dialogue_count", 0)
+    msgs = data.get("dialogue_messages", [])
+    analysis = data.get("free_analysis", {})
+    if not message.text:
+        await message.answer("Напиши текстовый ответ, пожалуйста.")
+        return
+    user_text = message.text.strip()
+    msgs.append({"role": "user", "content": user_text})
+    if count >= 4:
+        name = data.get("name", "")
+        text = FREE_ANALYSIS_TEXT.format(
+            potential=analysis.get("current_potential", 50),
+            zone=analysis.get("growth_zone", "—"),
+            mistake=analysis.get("mistake", "—"),
+            after=analysis.get("potential_after", 75),
+        )
+        await state.set_state(UserState.free_shown)
+        await message.answer(
+            "✅ Полный отчёт готов! Вот краткая сводка:",
+            reply_markup=free_analysis_keyboard(),
+        )
+        await message.answer(text)
+        return
+    name = data.get("name", "")
+    age = data.get("age", 25)
+    goals = data.get("selected_goals", [])
+    system = build_dialogue_system(analysis, name, age, goals)
+    reply = await dialogue_continue(msgs, system)
+    msgs.append({"role": "assistant", "content": reply})
+    await state.update_data(dialogue_messages=msgs, dialogue_count=count + 1)
+    await message.answer(reply)
 
 
 @router.callback_query(F.data == "confirm_edit", StateFilter(UserState.confirm))

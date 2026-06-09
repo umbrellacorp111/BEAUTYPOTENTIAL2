@@ -114,6 +114,65 @@ async def free_analysis(bot, photo_ids: list[str], name: str, age: int, goals: l
         }
 
 
+DIALOGUE_SYSTEM = (
+    "Ты — эксперт-консультант по внешности. Ты уже проанализировал фото человека.\n"
+    "У тебя есть его данные: имя={name}, возраст={age}, цели={goals}.\n"
+    "Результаты анализа: потенциал {potential}%, зона роста: {zone}, ошибка: {mistake}, прогноз: {after}%.\n\n"
+    "Сейчас ты ведёшь короткий диалог 3-5 сообщений.\n"
+    "Правила:\n"
+    "- Не раскрывай полный анализ сразу\n"
+    "- Задавай уточняющие вопросы по внешности\n"
+    "- Отвечай на ответы, выстраивай беседу\n"
+    "- После 3-5 сообщений плавно подведи к тому, что полный отчёт готов\n"
+    "- Финальное сообщение должно предлагать открыть полный разбор\n"
+    "- Пиши на русском, дружелюбно, от первого лица"
+)
+
+
+def build_dialogue_system(analysis: dict, name: str, age: int, goals: list[str]) -> str:
+    goals_str = ", ".join(goals) if goals else "не указано"
+    return DIALOGUE_SYSTEM.format(
+        name=name, age=age, goals=goals_str,
+        potential=analysis["current_potential"],
+        zone=analysis["growth_zone"],
+        mistake=analysis["mistake"],
+        after=analysis["potential_after"],
+    )
+
+
+async def dialogue_start(analysis: dict, name: str, age: int, goals: list[str]) -> str:
+    try:
+        c = get_client()
+        system = build_dialogue_system(analysis, name, age, goals)
+        resp = await c.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": "Я готов ответить на вопросы. Спроси меня что-нибудь о моей внешности."},
+            ],
+            max_tokens=300,
+        )
+        return resp.choices[0].message.content.strip()
+    except Exception as e:
+        logger.error(f"dialogue_start error: {e}", exc_info=True)
+        return "Расскажи, что тебя больше всего не устраивает в своей внешности?"
+
+
+async def dialogue_continue(history: list[dict], system: str) -> str:
+    try:
+        c = get_client()
+        messages = [{"role": "system", "content": system}] + history
+        resp = await c.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            max_tokens=300,
+        )
+        return resp.choices[0].message.content.strip()
+    except Exception as e:
+        logger.error(f"dialogue_continue error: {e}", exc_info=True)
+        return "Понял. Хочешь увидеть полный разбор?"
+
+
 async def full_report(bot, photo_ids: list[str], name: str, age: int, goals: list[str]) -> str:
     try:
         c = get_client()
