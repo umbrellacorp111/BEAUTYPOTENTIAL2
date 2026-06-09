@@ -137,18 +137,22 @@ async def dialogue_message(message: Message, state: FSMContext, bot: Bot):
     await message.answer(reply)
     if count >= 3:
         await update_user(message.from_user.id, free_used=1)
-        text = FREE_ANALYSIS_TEXT.format(
-            potential=analysis.get("current_potential", 50),
-            zone=analysis.get("growth_zone", "—"),
-            mistake=analysis.get("mistake", "—"),
-            after=analysis.get("potential_after", 75),
-        )
         await state.set_state(UserState.free_shown)
+        free_text = analysis.get("free_text", "")
+        if free_text:
+            await message.answer(free_text)
+        else:
+            text = FREE_ANALYSIS_TEXT.format(
+                potential=analysis.get("current_potential", 50),
+                zone=analysis.get("growth_zone", "—"),
+                mistake=analysis.get("mistake", "—"),
+                after=analysis.get("potential_after", 75),
+            )
+            await message.answer(text)
         await message.answer(
-            "✅ Полный отчёт готов! Вот краткая сводка:",
+            "🔥 Полный разбор готов! Хочешь открыть его?",
             reply_markup=free_analysis_keyboard(),
         )
-        await message.answer(text)
 
 
 @router.callback_query(F.data == "confirm_edit", StateFilter(UserState.confirm))

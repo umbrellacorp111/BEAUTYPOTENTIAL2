@@ -1,5 +1,4 @@
 import base64
-import json
 import re
 import logging
 from openai import AsyncOpenAI
@@ -145,15 +144,34 @@ def build_dialogue_system(analysis: dict, name: str, age: int, goals: list[str],
 # ── prompts ──────────────────────────────────────────────────────
 
 FREE_PROMPT = (
-    "Ты — эксперт по анализу внешности. Оцени человека по фото.\n"
-    "Параметры: имя={name}, возраст={age}, цели={goals}.\n"
-    "Разрешённый режим: FACE_ANALYSIS_ONLY — оценивай только черты лица.\n\n"
-    "Верни ТОЛЬКО JSON без пояснений. Ключи:\n"
-    "current_potential: число 0-100\n"
-    "growth_zone: строка — главная зона роста (только лицо)\n"
-    "mistake: строка — главная ошибка (только лицо)\n"
-    "potential_after: число 0-100\n\n"
-    "Будь честным, конструктивным, без лести."
+    "Ты — эксперт по анализу внешности. Создай индивидуальный бесплатный разбор человека по фото.\n"
+    "Параметры: имя={name}, возраст={age}, цели={goals}.\n\n"
+    "Правила:\n"
+    "- 120–250 слов\n"
+    "- Только по визуальным особенностям фото\n"
+    "- Запрещено: тревожность, депрессия, характер, психология, жизненные обстоятельства\n"
+    "- Не раскрывай главную ошибку, главную точку роста и самые эффективные рекомендации\n"
+    "- Вместо прямых ответов используй интригу, создавай ощущение скрытого знания\n"
+    "- Каждый анализ уникален — никаких шаблонов\n"
+    "- Обязательно минимум один необычный вывод, который удивит пользователя\n\n"
+    "Структура ответа:\n"
+    "📈 Текущий потенциал внешнего восприятия: N%\n"
+    "💪 Сильная сторона внешности: (что уже хорошо, но коротко)\n"
+    "⚠️ Зона роста: (интригующее описание без раскрытия сути)\n"
+    "🔍 Интересное наблюдение: (необычный вывод именно по этому лицу)\n"
+    "📈 Потенциал после улучшений: N%\n\n"
+    "Стиль: дружелюбный эксперт, который видит больше, чем говорит.\n\n"
+    "В конце обязательно добавь блок:\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
+    "🔒 В полном разборе доступны:\n"
+    "• Главный ограничитель внешности\n"
+    "• Самая сильная черта лица\n"
+    "• Персональные рекомендации\n"
+    "• Точки максимального роста\n"
+    "• Анализ первого впечатления\n"
+    "• Конкретный план улучшений\n"
+    "━━━━━━━━━━━━━━━━━━━━\n"
+    "🔥 Полный разбор готов"
 )
 
 FULL_PROMPT = (
@@ -199,24 +217,38 @@ async def _photo_to_base64(bot, file_id: str) -> str:
     return base64.b64encode(data).decode("utf-8")
 
 
-def _extract_json(text: str) -> dict | None:
-    text = text.strip()
-    if text.startswith("```"):
-        text = text.split("\n", 1)[-1]
-        text = text.rsplit("```", 1)[0]
-        text = text.strip()
-        if text.startswith("json"):
-            text = text[4:].strip()
-    match = re.search(r"\{.*\}", text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group())
-        except json.JSONDecodeError:
-            pass
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        return None
+# ── helpers: extraction ─────────────────────────────────────────
+
+
+def _extract_potential(text: str, label: str = "Текущий потенциал") -> int:
+    pattern = rf"{label}.*?(\d{{1,3}})\s*%"
+    m = re.search(pattern, text, re.IGNORECASE)
+    if m:
+        val = int(m.group(1))
+        return max(0, min(val, 100))
+    # fallback — ищем любое число с % после ключевых слов
+    m = re.search(r"(\d{1,3})\s*%", text)
+    return int(m.group(1)) if m else 50
+
+
+def _extract_after_potential(text: str) -> int:
+    m = re.search(r"(?:после улучшений|потенциал после).*?(\d{1,3})\s*%", text, re.IGNORECASE)
+    if m:
+        return max(0, min(int(m.group(1)), 100))
+    # fallback — последнее число с % в тексте
+    nums = re.findall(r"(\d{1,3})\s*%", text)
+    return int(nums[-1]) if nums else 75
+
+
+def _extract_growth_zone(text: str) -> str:
+    m = re.search(r"⚠.*?Зона роста[:\s]*(.+?)(?:\n|$)", text, re.IGNORECASE)
+    return m.group(1).strip() if m else "зона, которая требует внимания"
+
+
+def _extract_mistake(text: str) -> str:
+    # в бесплатном анализе ошибка не раскрывается — возвращаем интригу
+    m = re.search(r"(?:Интересное наблюдение|главный ограничитель)[:\s]*(.+?)(?:\n|$)", text, re.IGNORECASE)
+    return m.group(1).strip() if m else "скрыто до полного разбора"
 
 
 # ── free analysis ────────────────────────────────────────────────
@@ -243,22 +275,21 @@ async def free_analysis(bot, photo_ids: list[str], name: str, age: int, goals: l
                 {"role": "system", "content": system},
                 {"role": "user", "content": content},
             ],
-            max_tokens=500,
+            max_tokens=600,
         )
         text = resp.choices[0].message.content.strip()
         logger.info(f"Free analysis raw response: {text[:300]}")
-        data = _extract_json(text)
-        if not data:
-            raise ValueError(f"No valid JSON in response")
         return {
-            "current_potential": data.get("current_potential", 50),
-            "growth_zone": data.get("growth_zone", "не определено"),
-            "mistake": data.get("mistake", "не определено"),
-            "potential_after": data.get("potential_after", 75),
+            "free_text": text,
+            "current_potential": _extract_potential(text),
+            "potential_after": _extract_after_potential(text),
+            "growth_zone": _extract_growth_zone(text),
+            "mistake": _extract_mistake(text),
         }
     except Exception as e:
         logger.error(f"AI free analysis error: {e}", exc_info=True)
         return {
+            "free_text": "❌ Не удалось выполнить анализ. Попробуйте ещё раз.",
             "current_potential": 50,
             "growth_zone": "требуется повторный анализ",
             "mistake": "ошибка анализа, попробуйте снова",
