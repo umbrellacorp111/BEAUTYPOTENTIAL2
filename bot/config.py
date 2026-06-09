@@ -12,10 +12,18 @@ class Config:
     BOT_LINK: str = os.getenv("BOT_LINK", "https://t.me/bot")
 
     CREDIT_PACKAGES = [
-        {"label": "1 анализ — 99 ₽", "stars": 25, "rub": 99, "credits": 1},
-        {"label": "5 анализов — 390 ₽", "stars": 100, "rub": 390, "credits": 5},
-        {"label": "15 анализов — 990 ₽", "stars": 250, "rub": 990, "credits": 15},
+        {"label": "1 разбор — 99₽", "stars": 25, "rub": 99, "credits": 1},
+        {"label": "5 разборов — 290₽", "stars": 75, "rub": 290, "credits": 5},
+        {"label": "100 разборов — 999₽", "stars": 250, "rub": 999, "credits": 100},
     ]
+
+    STYLIST_PACKAGE = {
+        "label": "Персональный анализ от стилиста",
+        "stars": 300,
+        "rub": 1199,
+        "credits": 0,
+        "is_stylist": True,
+    }
 
     @property
     def database_url(self) -> str:

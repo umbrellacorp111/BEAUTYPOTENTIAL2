@@ -186,8 +186,9 @@ async def use_credit_yes(callback: CallbackQuery, state: FSMContext, bot: Bot):
     goals = data.get("selected_goals", [])
     name = data.get("name", "")
     photo_ids = data.get("photo_ids", [])
+    dialogue_msgs = data.get("dialogue_messages", [])
     await callback.message.answer("🤖 Нейросеть анализирует твои фото... это займёт до 30 секунд.")
-    report = await full_report(bot, photo_ids, name, age, goals)
+    report = await full_report(bot, photo_ids, name, age, goals, dialogue_history=dialogue_msgs)
     await update_user(callback.from_user.id, result_text=report, status="completed")
     await save_report_file(callback.from_user.id, report)
     from bot.texts.result import FULL_REPORT_HEADER, FULL_REPORT_FOOTER

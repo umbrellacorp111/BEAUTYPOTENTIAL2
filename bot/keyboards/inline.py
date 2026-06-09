@@ -64,9 +64,13 @@ def free_analysis_keyboard() -> InlineKeyboardMarkup:
 
 def credit_packages_keyboard(balance: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="1 анализ — 99₽ (25 ★)", callback_data="buy_1")
-    builder.button(text="5 анализов — 390₽ (100 ★)", callback_data="buy_5")
-    builder.button(text="15 анализов — 990₽ (250 ★)", callback_data="buy_15")
+    builder.button(text="1 разбор — 99₽", callback_data="buy_1")
+    builder.button(text="5 разборов — 290₽", callback_data="buy_5")
+    builder.button(text="100 разборов — 999₽", callback_data="buy_100")
+    builder.button(
+        text="👔 Персональный анализ от стилиста — 1 199₽",
+        callback_data="buy_stylist",
+    )
     builder.adjust(1)
     return builder.as_markup()
 

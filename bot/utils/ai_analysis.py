@@ -174,12 +174,32 @@ async def dialogue_continue(history: list[dict], system: str) -> str:
         return "Понял. Хочешь увидеть полный разбор?"
 
 
-async def full_report(bot, photo_ids: list[str], name: str, age: int, goals: list[str]) -> str:
+def _format_dialogue(messages: list[dict]) -> str:
+    lines = []
+    for m in messages:
+        role = "Клиент" if m["role"] == "user" else "Эксперт"
+        lines.append(f"{role}: {m['content']}")
+    return "\n".join(lines)
+
+
+DIALOGUE_CONTEXT_PROMPT = (
+    "\n\nДополнительный контекст из диалога с клиентом:\n{history}\n\n"
+    "Учти его ответы и вопросы при составлении разбора. "
+    "Особое внимание удели тому, что его волнует."
+)
+
+
+async def full_report(bot, photo_ids: list[str], name: str, age: int, goals: list[str],
+                      dialogue_history: list[dict] | None = None) -> str:
     try:
         c = get_client()
         goals_str = ", ".join(goals) if goals else "не указано"
+        prompt = FULL_PROMPT.format(name=name, age=age, goals=goals_str)
+        if dialogue_history:
+            history = _format_dialogue(dialogue_history)
+            prompt += DIALOGUE_CONTEXT_PROMPT.format(history=history)
         content = [
-            {"type": "text", "text": FULL_PROMPT.format(name=name, age=age, goals=goals_str)},
+            {"type": "text", "text": prompt},
         ]
         for fid in photo_ids[:3]:
             b64 = await _photo_to_base64(bot, fid)

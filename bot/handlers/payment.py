@@ -11,6 +11,9 @@ from bot.texts.payment import *
 from bot.texts.sales import CREDIT_HEADER
 from bot.keyboards.inline import *
 from bot.db.queries import update_user, get_user, add_credits
+from bot.utils.ai_analysis import full_report
+from bot.handlers.photos import save_report_file
+from bot.texts.result import FULL_REPORT_HEADER, FULL_REPORT_FOOTER
 
 router = Router()
 
@@ -18,7 +21,7 @@ router = Router()
 @router.callback_query(F.data.startswith("buy_"), StateFilter(UserState.credits_menu))
 async def buy_package(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
-    idx_map = {"buy_1": 0, "buy_5": 1, "buy_15": 2}
+    idx_map = {"buy_1": 0, "buy_5": 1, "buy_100": 2}
     idx = idx_map.get(callback.data)
     if idx is None:
         return
@@ -31,17 +34,35 @@ async def buy_package(callback: CallbackQuery, state: FSMContext):
     )
 
 
+@router.callback_query(F.data == "buy_stylist", StateFilter(UserState.credits_menu))
+async def buy_stylist(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    pkg = config.STYLIST_PACKAGE
+    await state.update_data(package_index=3, is_stylist=True)
+    await state.set_state(UserState.payment_method)
+    await callback.message.answer(
+        f"Выбери способ оплаты:\n\n{pkg['label']}",
+        reply_markup=payment_choice_keyboard(3),
+    )
+
+
 @router.callback_query(F.data.startswith("pay_stars_"), StateFilter(UserState.payment_method))
 async def pay_stars(callback: CallbackQuery, state: FSMContext, bot: Bot):
     await callback.answer()
     idx = int(callback.data.split("_")[2])
-    pkg = config.CREDIT_PACKAGES[idx]
+    if idx == 3:
+        pkg = config.STYLIST_PACKAGE
+        title = "Персональный анализ от стилиста"
+    else:
+        pkg = config.CREDIT_PACKAGES[idx]
+        title = "Пакет кредитов"
     prices = [LabeledPrice(label=pkg["label"], amount=pkg["stars"])]
+    payload_prefix = "stylist" if idx == 3 else "credits"
     await bot.send_invoice(
         chat_id=callback.from_user.id,
-        title="Пакет кредитов",
+        title=title,
         description=pkg["label"],
-        payload=f"credits_{callback.from_user.id}_{int(time.time())}",
+        payload=f"{payload_prefix}_{callback.from_user.id}_{int(time.time())}",
         provider_token="",
         currency="XTR",
         prices=prices,
@@ -54,13 +75,19 @@ async def pay_stars(callback: CallbackQuery, state: FSMContext, bot: Bot):
 async def pay_card(callback: CallbackQuery, state: FSMContext, bot: Bot):
     await callback.answer()
     idx = int(callback.data.split("_")[2])
-    pkg = config.CREDIT_PACKAGES[idx]
+    if idx == 3:
+        pkg = config.STYLIST_PACKAGE
+        title = "Персональный анализ от стилиста"
+    else:
+        pkg = config.CREDIT_PACKAGES[idx]
+        title = "Пакет кредитов"
     prices = [LabeledPrice(label=pkg["label"], amount=pkg["rub"] * 100)]
+    payload_prefix = "stylist" if idx == 3 else "credits"
     await bot.send_invoice(
         chat_id=callback.from_user.id,
-        title="Пакет кредитов",
+        title=title,
         description=pkg["label"],
-        payload=f"credits_{callback.from_user.id}_{int(time.time())}",
+        payload=f"{payload_prefix}_{callback.from_user.id}_{int(time.time())}",
         provider_token=config.YUKASSA_PROVIDER_TOKEN,
         currency="RUB",
         prices=prices,
@@ -90,12 +117,43 @@ async def pre_checkout_handler(pre_checkout_q: PreCheckoutQuery, bot: Bot):
 async def payment_success(message: Message, state: FSMContext):
     data = await state.get_data()
     idx = data.get("package_index", 0)
+    payment = message.successful_payment
+    method = "stars" if payment.currency == "XTR" else "card"
+
+    if data.get("is_stylist"):
+        pkg = config.STYLIST_PACKAGE
+        await update_user(
+            telegram_id=message.from_user.id,
+            payment_method=method,
+            payment_id=payment.provider_payment_charge_id or payment.telegram_payment_charge_id,
+            payment_amount=payment.total_amount / (1 if payment.currency == "XTR" else 100),
+        )
+        currency = "★" if payment.currency == "XTR" else "₽"
+        amount = pkg["stars"] if payment.currency == "XTR" else pkg["rub"]
+        await message.answer(
+            f"✅ Оплачено {amount} {currency}\n\n"
+            f"👔 Готовлю персональный разбор от стилиста..."
+        )
+        name = data.get("name", "")
+        age = data.get("age", 25)
+        goals = data.get("selected_goals", [])
+        photo_ids = data.get("photo_ids", [])
+        dialogue_msgs = data.get("dialogue_messages", [])
+        report = await full_report(
+            message.bot, photo_ids, name, age, goals, dialogue_history=dialogue_msgs
+        )
+        await update_user(message.from_user.id, result_text=report, status="completed")
+        await save_report_file(message.from_user.id, report)
+        full = FULL_REPORT_HEADER.format(name=name) + "\n" + report + "\n" + FULL_REPORT_FOOTER
+        await state.set_state(UserState.result)
+        await message.answer(full, reply_markup=after_report_keyboard())
+        await save_order_file(message.from_user.id, pkg, 0)
+        return
+
     pkg = config.CREDIT_PACKAGES[idx]
     credits = pkg["credits"]
     user = await add_credits(message.from_user.id, credits)
     balance = user.credits if user else 0
-    payment = message.successful_payment
-    method = "stars" if payment.currency == "XTR" else "card"
     await update_user(
         telegram_id=message.from_user.id,
         payment_method=method,
@@ -123,8 +181,10 @@ async def payment_success(message: Message, state: FSMContext):
 async def save_order_file(telegram_id: int, pkg: dict, credits: int):
     orders_dir = os.path.join(config.DATA_DIR, "orders")
     os.makedirs(orders_dir, exist_ok=True)
+    is_stylist = pkg.get("is_stylist", False)
+    title = "Персональный анализ от стилиста" if is_stylist else "Покупка кредитов"
     text = (
-        f"Покупка кредитов\n"
+        f"{title}\n"
         f"{'='*40}\n"
         f"Дата: {datetime.now()}\n"
         f"Telegram ID: {telegram_id}\n"
