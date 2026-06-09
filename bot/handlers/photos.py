@@ -8,7 +8,7 @@ from bot.texts.registration import *
 from bot.texts.sales import FREE_ANALYSIS_TEXT
 from bot.keyboards.inline import *
 from bot.db.queries import update_user, get_user
-from bot.utils.ai_analysis import free_analysis, full_report, dialogue_start, dialogue_continue, build_dialogue_system
+from bot.utils.ai_analysis import free_analysis, full_report, dialogue_start, dialogue_continue, build_dialogue_system, check_mode_compliance
 from bot.config import config
 
 router = Router()
@@ -122,6 +122,10 @@ async def dialogue_message(message: Message, state: FSMContext, bot: Bot):
         await message.answer("Напиши текстовый ответ, пожалуйста.")
         return
     user_text = message.text.strip()
+    blocked = check_mode_compliance(user_text)
+    if blocked:
+        await message.answer(blocked)
+        return
     msgs.append({"role": "user", "content": user_text})
     name = data.get("name", "")
     age = data.get("age", 25)

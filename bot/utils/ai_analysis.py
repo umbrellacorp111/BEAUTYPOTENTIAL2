@@ -9,18 +9,21 @@ logger = logging.getLogger(__name__)
 
 FREE_PROMPT = (
     "Ты — эксперт по анализу внешности. Оцени человека по фото.\n"
-    "Параметры: имя={name}, возраст={age}, цели={goals}.\n\n"
+    "Параметры: имя={name}, возраст={age}, цели={goals}.\n"
+    "Разрешённый режим: FACE_ANALYSIS_ONLY — оценивай только черты лица.\n\n"
     "Верни ТОЛЬКО JSON без пояснений. Ключи:\n"
     "current_potential: число 0-100\n"
-    "growth_zone: строка — главная зона роста\n"
-    "mistake: строка — главная ошибка\n"
+    "growth_zone: строка — главная зона роста (только лицо)\n"
+    "mistake: строка — главная ошибка (только лицо)\n"
     "potential_after: число 0-100\n\n"
     "Будь честным, конструктивным, без лести."
 )
 
 FULL_PROMPT = (
-    "Ты — эксперт по анализу внешности. Составь подробный разбор человека по фото.\n"
+    "Ты — профессиональный AI-ассистент по анализу внешности.\n"
+    "Разрешённый режим: FACE_ANALYSIS_ONLY.\n"
     "Параметры: имя={name}, возраст={age}, цели={goals}.\n\n"
+    "Составь подробный разбор человека по фото (только черты лица).\n"
     "Напиши на русском, дружелюбно, конкретно. Включи:\n"
     "1. Оценку текущего потенциала в %\n"
     "2. 3 сильные стороны\n"
@@ -28,7 +31,8 @@ FULL_PROMPT = (
     "4. 3 точки роста (80% результата)\n"
     "5. Прогноз после изменений в %\n"
     "6. Пошаговый план (5-7 шагов)\n"
-    "7. Рекомендации"
+    "7. Рекомендации\n\n"
+    "Запрещено: анализ тела, фигуры, веса, осанки, одежды, стиля, гардероба, прически как отдельной темы."
 )
 
 client: AsyncOpenAI | None = None
@@ -115,6 +119,62 @@ async def free_analysis(bot, photo_ids: list[str], name: str, age: int, goals: l
         }
 
 
+MODE_SETTINGS = {
+    "face": {
+        "label": "анализ черт лица",
+        "blocked_topics": [
+            "тело", "фигура", "вес", "осанка",
+            "одежда", "стиль одежды", "гардероб",
+            "прическа", "причёска",
+            "уверенность", "знакомства", "характер",
+        ],
+        "system_restriction": (
+            "Ты — профессиональный AI-ассистент по анализу внешности.\n"
+            "Твоя единственная разрешённая функция в этом режиме:\n"
+            "👉 анализ черт лица человека по изображению или описанию\n\n"
+            "Разрешённый режим: FACE_ANALYSIS_ONLY\n\n"
+            "Запрещено:\n"
+            "- анализ тела, фигуры, веса, осанки\n"
+            "- анализ одежды, стиля, гардероба\n"
+            "- анализ прически как отдельной темы\n"
+            "- психологический анализ личности\n"
+            "- советы по уверенности, жизни, знакомствам\n"
+            "- любые темы вне внешности лица\n\n"
+            "Если пользователь пытается выйти за рамки:\n"
+            "→ вежливо откажись\n"
+            "→ верни фокус на черты лица\n"
+            "→ предложи купить расширенный разбор\n\n"
+            "Разрешённые аспекты анализа:\n"
+            "форма лица, симметрия, пропорции\n"
+            "нос, глаза, губы, челюсть, скулы\n"
+            "выраженность черт, визуальные сильные стороны лица\n"
+            "рекомендации через лицо (борода/макияж/форма бровей)\n\n"
+            "Стиль: кратко, структурированно, без воды, без оскорблений.\n"
+            "Тон: профессиональный стилист / бьюти-аналитик.\n"
+            "Формат: Форма лица → Основные черты → Сильные стороны → Что улучшить → Итог"
+        ),
+    },
+}
+
+
+def get_mode_label(mode: str) -> str:
+    return MODE_SETTINGS.get(mode, MODE_SETTINGS["face"])["label"]
+
+
+def check_mode_compliance(user_text: str, mode: str = "face") -> str | None:
+    if mode not in MODE_SETTINGS:
+        return None
+    settings = MODE_SETTINGS[mode]
+    text_lower = user_text.lower()
+    for topic in settings["blocked_topics"]:
+        if topic in text_lower:
+            return (
+                "Этот тип анализа доступен только в расширенных тарифах. "
+                f"Сейчас активен режим: {settings['label']}."
+            )
+    return None
+
+
 DIALOGUE_SYSTEM = (
     "Ты — эксперт-консультант по внешности. Ты уже проанализировал фото человека.\n"
     "У тебя есть его данные: имя={name}, возраст={age}, цели={goals}.\n"
@@ -130,21 +190,25 @@ DIALOGUE_SYSTEM = (
 )
 
 
-def build_dialogue_system(analysis: dict, name: str, age: int, goals: list[str]) -> str:
+def build_dialogue_system(analysis: dict, name: str, age: int, goals: list[str],
+                          mode: str = "face") -> str:
     goals_str = ", ".join(goals) if goals else "не указано"
-    return DIALOGUE_SYSTEM.format(
+    restriction = MODE_SETTINGS.get(mode, MODE_SETTINGS["face"])["system_restriction"]
+    base = DIALOGUE_SYSTEM.format(
         name=name, age=age, goals=goals_str,
         potential=analysis["current_potential"],
         zone=analysis["growth_zone"],
         mistake=analysis["mistake"],
         after=analysis["potential_after"],
     )
+    return base + "\n\n" + restriction
 
 
-async def dialogue_start(analysis: dict, name: str, age: int, goals: list[str]) -> str:
+async def dialogue_start(analysis: dict, name: str, age: int, goals: list[str],
+                         mode: str = "face") -> str:
     try:
         c = get_client()
-        system = build_dialogue_system(analysis, name, age, goals)
+        system = build_dialogue_system(analysis, name, age, goals, mode=mode)
         resp = await c.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
