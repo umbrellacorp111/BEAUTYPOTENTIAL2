@@ -56,13 +56,11 @@ def _create_yukassa_payment(pkg: dict, payload_prefix: str, telegram_id: int) ->
     return payment.id, payment.confirmation.confirmation_url
 
 
-@router.callback_query(F.data.startswith("buy_"), StateFilter(UserState.credits_menu))
+@router.callback_query(F.data.in_({"buy_1", "buy_5", "buy_100"}), StateFilter(UserState.credits_menu))
 async def buy_package(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     idx_map = {"buy_1": 0, "buy_5": 1, "buy_100": 2}
     idx = idx_map.get(callback.data)
-    if idx is None:
-        return
     pkg = config.CREDIT_PACKAGES[idx]
     await state.update_data(package_index=idx)
     await state.set_state(UserState.payment_method)
