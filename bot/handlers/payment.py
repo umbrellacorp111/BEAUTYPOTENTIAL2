@@ -179,6 +179,30 @@ async def pay_back(callback: CallbackQuery, state: FSMContext):
     )
 
 
+@router.callback_query(F.data == "pay_back", StateFilter(UserState.awaiting_payment))
+async def pay_back_from_payment(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    user = await get_user(callback.from_user.id)
+    balance = user.credits if user else 0
+    await state.set_state(UserState.credits_menu)
+    await callback.message.answer(
+        CREDIT_HEADER,
+        reply_markup=credit_packages_keyboard(balance),
+    )
+
+
+@router.callback_query(F.data == "pay_back")
+async def pay_back_fallback(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    user = await get_user(callback.from_user.id)
+    balance = user.credits if user else 0
+    await state.set_state(UserState.credits_menu)
+    await callback.message.answer(
+        CREDIT_HEADER,
+        reply_markup=credit_packages_keyboard(balance),
+    )
+
+
 async def _process_successful_payment(
     bot: Bot,
     telegram_id: int,
