@@ -164,7 +164,7 @@ async def confirm_edit(callback: CallbackQuery, state: FSMContext):
 
 
 @router.callback_query(F.data == "buy_full_report", StateFilter(UserState.free_shown))
-async def buy_full_report(callback: CallbackQuery, state: FSMContext):
+async def buy_full_report(callback: CallbackQuery, state: FSMContext, bot: Bot):
     await callback.answer()
     user = await get_user(callback.from_user.id)
     if user and user.godmode:
