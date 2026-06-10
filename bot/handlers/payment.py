@@ -1,10 +1,14 @@
 import time
 import os
+import uuid
+import logging
 from datetime import datetime
+from aiohttp import web
 from aiogram import Router, F, Bot
-from aiogram.types import Message, CallbackQuery, LabeledPrice, PreCheckoutQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
+from yookassa import Configuration, Payment
 from bot.config import config
 from bot.states.user_states import UserState
 from bot.texts.payment import *
@@ -15,7 +19,37 @@ from bot.utils.ai_analysis import full_report
 from bot.handlers.photos import save_report_file
 from bot.texts.result import FULL_REPORT_HEADER, FULL_REPORT_FOOTER
 
+logger = logging.getLogger(__name__)
 router = Router()
+
+# Настройка ЮКассы
+Configuration.account_id = config.YUKASSA_SHOP_ID
+Configuration.secret_key = config.YUKASSA_SECRET_KEY
+
+# Временное хранилище платежей: {payment_id: {telegram_id, package_index, is_stylist, state_data}}
+pending_payments: dict = {}
+
+
+def _create_yukassa_payment(pkg: dict, payload_prefix: str, telegram_id: int) -> tuple[str, str]:
+    """Создаёт платёж в ЮКассе, возвращает (payment_id, confirmation_url)"""
+    idempotence_key = str(uuid.uuid4())
+    payment = Payment.create({
+        "amount": {
+            "value": f"{pkg['rub']}.00",
+            "currency": "RUB"
+        },
+        "confirmation": {
+            "type": "redirect",
+            "return_url": config.YUKASSA_RETURN_URL
+        },
+        "capture": True,
+        "description": pkg["label"],
+        "metadata": {
+            "telegram_id": str(telegram_id),
+            "payload": f"{payload_prefix}_{telegram_id}_{int(time.time())}"
+        }
+    }, idempotence_key)
+    return payment.id, payment.confirmation.confirmation_url
 
 
 @router.callback_query(F.data.startswith("buy_"), StateFilter(UserState.credits_menu))
@@ -46,30 +80,76 @@ async def buy_stylist(callback: CallbackQuery, state: FSMContext):
     )
 
 
-
 @router.callback_query(F.data.startswith("pay_card_"), StateFilter(UserState.payment_method))
 async def pay_card(callback: CallbackQuery, state: FSMContext, bot: Bot):
     await callback.answer()
     idx = int(callback.data.split("_")[2])
-    if idx == 3:
-        pkg = config.STYLIST_PACKAGE
-        title = "Персональный анализ от стилиста"
-    else:
-        pkg = config.CREDIT_PACKAGES[idx]
-        title = "Пакет кредитов"
-    prices = [LabeledPrice(label=pkg["label"], amount=pkg["rub"] * 100)]
-    payload_prefix = "stylist" if idx == 3 else "credits"
-    await bot.send_invoice(
-        chat_id=callback.from_user.id,
-        title=title,
-        description=pkg["label"],
-        payload=f"{payload_prefix}_{callback.from_user.id}_{int(time.time())}",
-        provider_token=config.YUKASSA_PROVIDER_TOKEN,
-        currency="RUB",
-        prices=prices,
+    is_stylist = idx == 3
+    pkg = config.STYLIST_PACKAGE if is_stylist else config.CREDIT_PACKAGES[idx]
+    payload_prefix = "stylist" if is_stylist else "credits"
+
+    try:
+        payment_id, pay_url = _create_yukassa_payment(pkg, payload_prefix, callback.from_user.id)
+    except Exception as e:
+        logger.error(f"ЮКасса ошибка создания платежа: {e}", exc_info=True)
+        await callback.message.answer("❌ Ошибка создания платежа. Попробуй позже.")
+        return
+
+    # Сохраняем данные платежа
+    state_data = await state.get_data()
+    pending_payments[payment_id] = {
+        "telegram_id": callback.from_user.id,
+        "package_index": idx,
+        "is_stylist": is_stylist,
+        "state_data": state_data,
+    }
+
+    # Отправляем кнопку с ссылкой на оплату
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💳 Оплатить", url=pay_url)],
+        [InlineKeyboardButton(text="✅ Я оплатил", callback_data=f"check_payment_{payment_id}")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="pay_back")],
+    ])
+    await callback.message.answer(
+        f"💳 *{pkg['label']}*\n\n"
+        f"Нажми кнопку ниже для оплаты.\n"
+        f"После оплаты нажми «Я оплатил» для получения разбора.",
+        reply_markup=keyboard,
+        parse_mode="Markdown"
     )
     await state.set_state(UserState.awaiting_payment)
-    await state.update_data(payment_method="card", package_index=idx)
+    await state.update_data(payment_method="card", package_index=idx, payment_id=payment_id)
+
+
+@router.callback_query(F.data.startswith("check_payment_"), StateFilter(UserState.awaiting_payment))
+async def check_payment(callback: CallbackQuery, state: FSMContext, bot: Bot):
+    """Ручная проверка платежа по нажатию 'Я оплатил'"""
+    await callback.answer("Проверяю оплату...")
+    payment_id = callback.data.replace("check_payment_", "")
+
+    try:
+        payment = Payment.find_one(payment_id)
+        if payment.status == "succeeded":
+            await callback.message.answer("✅ Оплата подтверждена!")
+            data = pending_payments.pop(payment_id, None)
+            if data:
+                await _process_successful_payment(
+                    bot=bot,
+                    telegram_id=callback.from_user.id,
+                    payment_id=payment_id,
+                    amount=float(payment.amount.value),
+                    package_index=data["package_index"],
+                    is_stylist=data["is_stylist"],
+                    state_data=data["state_data"],
+                    state=state,
+                )
+        elif payment.status == "pending":
+            await callback.message.answer("⏳ Оплата ещё не поступила. Подожди немного и попробуй снова.")
+        else:
+            await callback.message.answer("❌ Оплата не прошла. Попробуй создать новый платёж.")
+    except Exception as e:
+        logger.error(f"Ошибка проверки платежа {payment_id}: {e}", exc_info=True)
+        await callback.message.answer("❌ Ошибка проверки. Попробуй позже.")
 
 
 @router.callback_query(F.data == "pay_back", StateFilter(UserState.payment_method))
@@ -84,66 +164,110 @@ async def pay_back(callback: CallbackQuery, state: FSMContext):
     )
 
 
-@router.pre_checkout_query()
-async def pre_checkout_handler(pre_checkout_q: PreCheckoutQuery, bot: Bot):
-    await bot.answer_pre_checkout_query(pre_checkout_q.id, ok=True)
-
-
-@router.message(F.successful_payment)
-async def payment_success(message: Message, state: FSMContext):
-    data = await state.get_data()
-    idx = data.get("package_index", 0)
-    payment = message.successful_payment
-
-    if data.get("is_stylist"):
+async def _process_successful_payment(
+    bot: Bot,
+    telegram_id: int,
+    payment_id: str,
+    amount: float,
+    package_index: int,
+    is_stylist: bool,
+    state_data: dict,
+    state: FSMContext | None = None,
+):
+    """Общая логика начисления после успешной оплаты"""
+    if is_stylist:
         pkg = config.STYLIST_PACKAGE
         await update_user(
-            telegram_id=message.from_user.id,
+            telegram_id=telegram_id,
             payment_method="card",
-            payment_id=payment.provider_payment_charge_id,
-            payment_amount=payment.total_amount / 100,
+            payment_id=payment_id,
+            payment_amount=amount,
         )
-        await message.answer(
-            f"✅ Оплачено {pkg['rub']}₽\n\n"
-            f"👔 Готовлю персональный разбор от стилиста..."
+        await bot.send_message(
+            telegram_id,
+            f"✅ Оплачено {pkg['rub']}₽\n\n👔 Готовлю персональный разбор от стилиста..."
         )
-        name = data.get("name", "")
-        age = data.get("age", 25)
-        goals = data.get("selected_goals", [])
-        photo_ids = data.get("photo_ids", [])
-        dialogue_msgs = data.get("dialogue_messages", [])
-        report = await full_report(
-            message.bot, photo_ids, name, age, goals, dialogue_history=dialogue_msgs
+        name = state_data.get("name", "")
+        age = state_data.get("age", 25)
+        goals = state_data.get("selected_goals", [])
+        photo_ids = state_data.get("photo_ids", [])
+        dialogue_msgs = state_data.get("dialogue_messages", [])
+        report = await full_report(bot, photo_ids, name, age, goals, dialogue_history=dialogue_msgs)
+        await update_user(telegram_id, result_text=report, status="completed")
+        await save_report_file(telegram_id, report)
+        full_text = FULL_REPORT_HEADER.format(name=name) + "\n" + report + "\n" + FULL_REPORT_FOOTER
+        if state:
+            await state.set_state(UserState.result)
+        await bot.send_message(telegram_id, full_text, reply_markup=after_report_keyboard())
+        await save_order_file(telegram_id, pkg, 0)
+    else:
+        pkg = config.CREDIT_PACKAGES[package_index]
+        credits = pkg["credits"]
+        user = await add_credits(telegram_id, credits)
+        balance = user.credits if user else 0
+        await update_user(
+            telegram_id=telegram_id,
+            payment_method="card",
+            payment_id=payment_id,
+            payment_amount=amount,
         )
-        await update_user(message.from_user.id, result_text=report, status="completed")
-        await save_report_file(message.from_user.id, report)
-        full = FULL_REPORT_HEADER.format(name=name) + "\n" + report + "\n" + FULL_REPORT_FOOTER
-        await state.set_state(UserState.result)
-        await message.answer(full, reply_markup=after_report_keyboard())
-        await save_order_file(message.from_user.id, pkg, 0)
-        return
+        await bot.send_message(
+            telegram_id,
+            PAYMENT_SUCCESS_RUB.format(rub=pkg["rub"], credits=credits, balance=balance)
+        )
+        if balance > 0:
+            if state:
+                await state.set_state(UserState.credits_menu)
+            from bot.texts.payment import USE_CREDIT_PROMPT
+            await bot.send_message(
+                telegram_id,
+                USE_CREDIT_PROMPT.format(balance=balance),
+                reply_markup=use_credit_keyboard(),
+            )
+        await save_order_file(telegram_id, pkg, credits)
 
-    pkg = config.CREDIT_PACKAGES[idx]
-    credits = pkg["credits"]
-    user = await add_credits(message.from_user.id, credits)
-    balance = user.credits if user else 0
-    await update_user(
-        telegram_id=message.from_user.id,
-        payment_method="card",
-        payment_id=payment.provider_payment_charge_id,
-        payment_amount=payment.total_amount / 100,
-    )
-    await message.answer(
-        PAYMENT_SUCCESS_RUB.format(rub=pkg["rub"], credits=credits, balance=balance)
-    )
-    if balance > 0 and await state.get_state() not in (UserState.result,):
-        await state.set_state(UserState.credits_menu)
-        from bot.texts.payment import USE_CREDIT_PROMPT
-        await message.answer(
-            USE_CREDIT_PROMPT.format(balance=balance),
-            reply_markup=use_credit_keyboard(),
+
+async def yukassa_webhook_handler(request: web.Request) -> web.Response:
+    """Webhook от ЮКассы — вызывается автоматически после оплаты"""
+    try:
+        import json
+        from yookassa.domain.notification import WebhookNotificationEventType, WebhookNotificationFactory
+        body = await request.text()
+        notification = WebhookNotificationFactory().create(json.loads(body))
+
+        if notification.event != WebhookNotificationEventType.PAYMENT_SUCCEEDED:
+            return web.Response(status=200)
+
+        payment_obj = notification.object
+        payment_id = payment_obj.id
+        amount = float(payment_obj.amount.value)
+        metadata = payment_obj.metadata or {}
+        telegram_id = int(metadata.get("telegram_id", 0))
+
+        if not telegram_id:
+            logger.warning(f"Webhook: нет telegram_id в metadata для платежа {payment_id}")
+            return web.Response(status=200)
+
+        data = pending_payments.pop(payment_id, None)
+        if not data:
+            logger.warning(f"Webhook: платёж {payment_id} не найден в pending_payments")
+            return web.Response(status=200)
+
+        bot: Bot = request.app["bot"]
+        await _process_successful_payment(
+            bot=bot,
+            telegram_id=telegram_id,
+            payment_id=payment_id,
+            amount=amount,
+            package_index=data["package_index"],
+            is_stylist=data["is_stylist"],
+            state_data=data["state_data"],
         )
-    await save_order_file(message.from_user.id, pkg, credits)
+        return web.Response(status=200)
+
+    except Exception as e:
+        logger.error(f"Webhook ошибка: {e}", exc_info=True)
+        return web.Response(status=200)
 
 
 async def save_order_file(telegram_id: int, pkg: dict, credits: int):
@@ -158,7 +282,7 @@ async def save_order_file(telegram_id: int, pkg: dict, credits: int):
         f"Telegram ID: {telegram_id}\n"
         f"Пакет: {pkg['label']}\n"
         f"Кредитов: {credits}\n"
-        f"Сумма: {pkg.get('rub', pkg.get('stars'))}{'₽' if 'rub' in pkg else ' ★'}\n"
+        f"Сумма: {pkg.get('rub')}₽\n"
     )
     filepath = os.path.join(orders_dir, f"purchase_{telegram_id}_{int(time.time())}.txt")
     with open(filepath, "w", encoding="utf-8") as f:
