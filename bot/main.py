@@ -13,6 +13,7 @@ logging.basicConfig(level=logging.INFO)
 
 async def on_startup():
     async with engine.begin() as conn:
+        # Создаёт все таблицы включая новую pending_payments
         await conn.run_sync(Base.metadata.create_all)
         result = await conn.execute(text("PRAGMA table_info(users)"))
         rows = result.all()
@@ -23,6 +24,7 @@ async def on_startup():
         if "free_used" not in cols:
             await conn.execute(text("ALTER TABLE users ADD COLUMN free_used INTEGER DEFAULT 0"))
             logging.info("Added column 'free_used' to users table")
+    logging.info("Database ready (pending_payments table ensured)")
 
 
 async def on_shutdown():

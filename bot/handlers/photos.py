@@ -22,6 +22,8 @@ async def process_photo(message: Message, state: FSMContext):
     if file_id not in photo_ids:
         photo_ids.append(file_id)
     await state.update_data(photo_ids=photo_ids)
+    # Сохраняем photo_ids в БД сразу — чтобы пережить рестарт до оплаты
+    await update_user(message.from_user.id, photo_ids=photo_ids)
     count = len(photo_ids)
     if count == 1:
         await message.answer(PHOTO_RECEIVED_1, reply_markup=photo_done_keyboard())

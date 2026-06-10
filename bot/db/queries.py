@@ -82,3 +82,84 @@ async def add_credits(telegram_id: int, amount: int) -> User | None:
         await session.commit()
         await session.refresh(user)
         return user
+
+
+# ──────────────────────────────────────────────
+# PendingPayment queries
+# ──────────────────────────────────────────────
+
+from bot.db.models import PendingPayment
+from datetime import datetime
+
+
+async def create_pending_payment(
+    payment_id: str,
+    telegram_id: int,
+    package_index: int,
+    is_stylist: bool,
+    state_data: dict,
+) -> PendingPayment:
+    """Сохранить данные платежа в БД перед отправкой пользователя на оплату."""
+    async with async_session() as session:
+        record = PendingPayment(
+            payment_id=payment_id,
+            telegram_id=telegram_id,
+            package_index=package_index,
+            is_stylist=is_stylist,
+            state_data=state_data,
+            status="pending",
+        )
+        session.add(record)
+        await session.commit()
+        await session.refresh(record)
+        return record
+
+
+async def get_pending_payment(payment_id: str) -> PendingPayment | None:
+    """Получить запись по payment_id."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(PendingPayment).where(PendingPayment.payment_id == payment_id)
+        )
+        return result.scalar_one_or_none()
+
+
+async def get_pending_payment_by_user(telegram_id: int) -> PendingPayment | None:
+    """Получить последний незавершённый платёж пользователя (для восстановления после рестарта)."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(PendingPayment)
+            .where(
+                PendingPayment.telegram_id == telegram_id,
+                PendingPayment.status == "pending",
+            )
+            .order_by(PendingPayment.created_at.desc())
+        )
+        return result.scalar_one_or_none()
+
+
+async def complete_pending_payment(payment_id: str) -> None:
+    """Отметить платёж как выполненный и удалить временные данные."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(PendingPayment).where(PendingPayment.payment_id == payment_id)
+        )
+        record = result.scalar_one_or_none()
+        if record:
+            record.status = "succeeded"
+            record.completed_at = datetime.utcnow()
+            # Очищаем тяжёлые временные данные, оставляем только метаданные
+            record.state_data = {}
+            await session.commit()
+
+
+async def fail_pending_payment(payment_id: str) -> None:
+    """Отметить платёж как неудачный."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(PendingPayment).where(PendingPayment.payment_id == payment_id)
+        )
+        record = result.scalar_one_or_none()
+        if record:
+            record.status = "failed"
+            await session.commit()

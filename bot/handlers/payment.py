@@ -14,7 +14,11 @@ from bot.states.user_states import UserState
 from bot.texts.payment import *
 from bot.texts.sales import CREDIT_HEADER
 from bot.keyboards.inline import *
-from bot.db.queries import update_user, get_user, add_credits
+from bot.db.queries import (
+    update_user, get_user, add_credits,
+    create_pending_payment, get_pending_payment,
+    complete_pending_payment, fail_pending_payment,
+)
 from bot.utils.ai_analysis import full_report
 from bot.handlers.photos import save_report_file
 from bot.texts.result import FULL_REPORT_HEADER, FULL_REPORT_FOOTER
@@ -26,8 +30,7 @@ router = Router()
 Configuration.account_id = config.YUKASSA_SHOP_ID
 Configuration.secret_key = config.YUKASSA_SECRET_KEY
 
-# Временное хранилище платежей: {payment_id: {telegram_id, package_index, is_stylist, state_data}}
-pending_payments: dict = {}
+# pending_payments dict УДАЛЁН — данные хранятся в таблице pending_payments (БД)
 
 
 def _create_yukassa_payment(pkg: dict, payload_prefix: str, telegram_id: int) -> tuple[str, str]:
@@ -95,14 +98,15 @@ async def pay_card(callback: CallbackQuery, state: FSMContext, bot: Bot):
         await callback.message.answer("❌ Ошибка создания платежа. Попробуй позже.")
         return
 
-    # Сохраняем данные платежа
+    # Сохраняем данные платежа в БД (переживёт рестарт контейнера)
     state_data = await state.get_data()
-    pending_payments[payment_id] = {
-        "telegram_id": callback.from_user.id,
-        "package_index": idx,
-        "is_stylist": is_stylist,
-        "state_data": state_data,
-    }
+    await create_pending_payment(
+        payment_id=payment_id,
+        telegram_id=callback.from_user.id,
+        package_index=idx,
+        is_stylist=is_stylist,
+        state_data=state_data,
+    )
 
     # Отправляем кнопку с ссылкой на оплату
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -131,18 +135,30 @@ async def check_payment(callback: CallbackQuery, state: FSMContext, bot: Bot):
         payment = Payment.find_one(payment_id)
         if payment.status == "succeeded":
             await callback.message.answer("✅ Оплата подтверждена!")
-            data = pending_payments.pop(payment_id, None)
-            if data:
+            # Загружаем данные из БД, а не из памяти
+            data = await get_pending_payment(payment_id)
+            if data and data.status == "pending":
                 await _process_successful_payment(
                     bot=bot,
                     telegram_id=callback.from_user.id,
                     payment_id=payment_id,
                     amount=float(payment.amount.value),
-                    package_index=data["package_index"],
-                    is_stylist=data["is_stylist"],
-                    state_data=data["state_data"],
+                    package_index=data.package_index,
+                    is_stylist=data.is_stylist,
+                    state_data=data.state_data,
                     state=state,
                 )
+            else:
+                # Платёж уже обработан (например, вебхуком) — восстанавливаем из БД пользователя
+                user = await get_user(callback.from_user.id)
+                if user and user.status == "completed" and user.result_text:
+                    from bot.texts.result import FULL_REPORT_HEADER, FULL_REPORT_FOOTER
+                    name = user.name or ""
+                    full = FULL_REPORT_HEADER.format(name=name) + "\n" + user.result_text + "\n" + FULL_REPORT_FOOTER
+                    await state.set_state(UserState.result)
+                    await callback.message.answer(full, reply_markup=after_report_keyboard())
+                else:
+                    await callback.message.answer("✅ Платёж уже был обработан.")
         elif payment.status == "pending":
             await callback.message.answer("⏳ Оплата ещё не поступила. Подожди немного и попробуй снова.")
         else:
@@ -200,6 +216,8 @@ async def _process_successful_payment(
             await state.set_state(UserState.result)
         await bot.send_message(telegram_id, full_text, reply_markup=after_report_keyboard())
         await save_order_file(telegram_id, pkg, 0)
+        # Отмечаем платёж выполненным и очищаем временные данные
+        await complete_pending_payment(payment_id)
     else:
         pkg = config.CREDIT_PACKAGES[package_index]
         credits = pkg["credits"]
@@ -225,6 +243,8 @@ async def _process_successful_payment(
                 reply_markup=use_credit_keyboard(),
             )
         await save_order_file(telegram_id, pkg, credits)
+        # Отмечаем платёж выполненным и очищаем временные данные
+        await complete_pending_payment(payment_id)
 
 
 async def yukassa_webhook_handler(request: web.Request) -> web.Response:
@@ -248,9 +268,9 @@ async def yukassa_webhook_handler(request: web.Request) -> web.Response:
             logger.warning(f"Webhook: нет telegram_id в metadata для платежа {payment_id}")
             return web.Response(status=200)
 
-        data = pending_payments.pop(payment_id, None)
-        if not data:
-            logger.warning(f"Webhook: платёж {payment_id} не найден в pending_payments")
+        data = await get_pending_payment(payment_id)
+        if not data or data.status != "pending":
+            logger.warning(f"Webhook: платёж {payment_id} не найден в БД или уже обработан")
             return web.Response(status=200)
 
         bot: Bot = request.app["bot"]
@@ -259,9 +279,9 @@ async def yukassa_webhook_handler(request: web.Request) -> web.Response:
             telegram_id=telegram_id,
             payment_id=payment_id,
             amount=amount,
-            package_index=data["package_index"],
-            is_stylist=data["is_stylist"],
-            state_data=data["state_data"],
+            package_index=data.package_index,
+            is_stylist=data.is_stylist,
+            state_data=data.state_data,
         )
         return web.Response(status=200)
 
