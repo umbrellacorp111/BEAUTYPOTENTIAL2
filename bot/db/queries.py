@@ -1,6 +1,7 @@
 from sqlalchemy import select, func
 from bot.db.models import User
 from bot.db.session import async_session
+from datetime import datetime, timedelta
 
 
 async def create_user(telegram_id: int, username: str | None, first_name: str | None) -> User:
@@ -151,6 +152,18 @@ async def complete_pending_payment(payment_id: str) -> None:
             # Очищаем тяжёлые временные данные, оставляем только метаданные
             record.state_data = {}
             await session.commit()
+
+
+async def has_stylist_access(telegram_id: int) -> bool:
+    user = await get_user(telegram_id)
+    if not user or not user.stylist_access_until:
+        return False
+    return user.stylist_access_until > datetime.utcnow()
+
+
+async def set_stylist_access(telegram_id: int, days: int = 30) -> User | None:
+    until = datetime.utcnow() + timedelta(days=days)
+    return await update_user(telegram_id, stylist_access_until=until)
 
 
 async def fail_pending_payment(payment_id: str) -> None:

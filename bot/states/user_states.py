@@ -13,3 +13,4 @@ class UserState(StatesGroup):
     payment_method = State()
     awaiting_payment = State()
     result = State()
+    stylist_chat = State()

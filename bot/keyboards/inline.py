@@ -5,6 +5,7 @@ from aiogram.types import InlineKeyboardMarkup
 def start_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="🔍 Начать разбор", callback_data="start_survey")
+    builder.button(text="👗 ИИ-Стилист PRO", callback_data="stylist_pro_info")
     return builder.as_markup()
 
 
@@ -96,4 +97,26 @@ def after_report_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="🔄 Новый разбор", callback_data="start_survey")
     builder.button(text="🏠 В начало", callback_data="go_home")
     builder.adjust(1)
+    return builder.as_markup()
+
+
+def stylist_pro_info_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="💳 Купить за 490₽", callback_data="stylist_pro_buy")
+    builder.button(text="🔙 Назад", callback_data="go_home")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def stylist_renew_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="💳 Продлить за 490₽", callback_data="stylist_pro_buy")
+    builder.button(text="🔙 Назад", callback_data="go_home")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def stylist_chat_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🏠 В начало", callback_data="go_home")
     return builder.as_markup()

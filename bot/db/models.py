@@ -1,5 +1,6 @@
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import Column, BigInteger, String, Integer, Text, DateTime, Float, JSON, Boolean, func
+from datetime import datetime
 
 
 class Base(DeclarativeBase):
@@ -20,6 +21,7 @@ class User(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="new")
     credits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     free_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    stylist_access_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     payment_method: Mapped[str | None] = mapped_column(String(32), nullable=True)
     payment_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     payment_amount: Mapped[float | None] = mapped_column(Float, nullable=True)

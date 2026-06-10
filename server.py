@@ -7,7 +7,7 @@ from sqlalchemy import text
 from bot.config import config
 from bot.db.session import engine
 from bot.db.models import Base
-from bot.handlers import start, registration, photos, payment, result, feedback, admin
+from bot.handlers import start, registration, photos, payment, result, feedback, admin, stylist
 from bot.handlers.payment import yukassa_webhook_handler
 
 logging.basicConfig(level=logging.INFO)
@@ -23,6 +23,8 @@ async def on_startup():
             await conn.execute(text("ALTER TABLE users ADD COLUMN credits INTEGER DEFAULT 0"))
         if "free_used" not in cols:
             await conn.execute(text("ALTER TABLE users ADD COLUMN free_used INTEGER DEFAULT 0"))
+        if "stylist_access_until" not in cols:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN stylist_access_until DATETIME DEFAULT NULL"))
 
 
 async def health_handler(request: web.Request) -> web.Response:
@@ -43,6 +45,7 @@ async def main():
         result.router,
         feedback.router,
         admin.router,
+        stylist.router,
     )
 
     # aiohttp веб-сервер для healthcheck + webhook

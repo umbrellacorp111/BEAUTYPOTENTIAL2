@@ -26,6 +26,12 @@ class Config:
         "is_stylist": True,
     }
 
+    STYLIST_PRO_PACKAGE = {
+        "label": "👗 ИИ-Стилист PRO — 30 дней",
+        "rub": 490,
+        "days": 30,
+    }
+
     @property
     def database_url(self) -> str:
         db_path = os.path.join(self.DATA_DIR, "bot.db")
