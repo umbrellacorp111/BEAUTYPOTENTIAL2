@@ -141,6 +141,67 @@ async def get_stylist_application(app_id: int) -> StylistApplication | None:
 
 
 # ──────────────────────────────────────────────
+# SavedAnalysis queries
+# ──────────────────────────────────────────────
+
+from bot.db.models import SavedAnalysis
+
+
+async def save_analysis(telegram_id: int, report_type: str, report_text: str) -> SavedAnalysis:
+    async with async_session() as session:
+        record = SavedAnalysis(
+            telegram_id=telegram_id,
+            report_type=report_type,
+            report_text=report_text,
+        )
+        session.add(record)
+        await session.commit()
+        await session.refresh(record)
+        return record
+
+
+async def get_user_analyses(telegram_id: int) -> list[SavedAnalysis]:
+    async with async_session() as session:
+        result = await session.execute(
+            select(SavedAnalysis)
+            .where(SavedAnalysis.telegram_id == telegram_id)
+            .order_by(SavedAnalysis.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+
+async def get_saved_analysis(analysis_id: int) -> SavedAnalysis | None:
+    async with async_session() as session:
+        result = await session.execute(
+            select(SavedAnalysis).where(SavedAnalysis.id == analysis_id)
+        )
+        return result.scalar_one_or_none()
+
+
+async def migrate_existing_reports():
+    """Переносит старые result_text из users в saved_analyses."""
+    from bot.db.models import User
+    async with async_session() as session:
+        users = await session.execute(
+            select(User).where(User.result_text.isnot(None), User.result_text != "")
+        )
+        for user in users.scalars().all():
+            existing = await session.execute(
+                select(SavedAnalysis).where(
+                    SavedAnalysis.telegram_id == user.telegram_id,
+                    SavedAnalysis.report_text == user.result_text,
+                )
+            )
+            if not existing.scalar_one_or_none():
+                session.add(SavedAnalysis(
+                    telegram_id=user.telegram_id,
+                    report_type="full",
+                    report_text=user.result_text,
+                ))
+        await session.commit()
+
+
+# ──────────────────────────────────────────────
 # PendingPayment queries
 # ──────────────────────────────────────────────
 

@@ -6,6 +6,7 @@ from aiogram.client.default import DefaultBotProperties
 from bot.config import config
 from bot.db.session import engine
 from bot.db.models import Base
+from bot.db.queries import migrate_existing_reports
 from bot.handlers import start, registration, photos, payment, result, feedback, admin, stylist
 
 logging.basicConfig(level=logging.INFO)
@@ -27,6 +28,7 @@ async def on_startup():
         if "stylist_access_until" not in cols:
             await conn.execute(text("ALTER TABLE users ADD COLUMN stylist_access_until DATETIME DEFAULT NULL"))
             logging.info("Added column 'stylist_access_until' to users table")
+    await migrate_existing_reports()
     logging.info("Database ready")
 
 

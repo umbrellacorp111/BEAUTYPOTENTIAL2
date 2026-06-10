@@ -1,6 +1,5 @@
 import uuid
 import time
-import base64
 import logging
 from datetime import datetime, timedelta
 from aiogram import Router, F, Bot
@@ -16,6 +15,7 @@ from bot.keyboards.inline import (
 from bot.db.queries import get_user, update_user, has_stylist_access
 from bot.texts.stylist import *
 from bot.utils.ai_stylist import stylist_chat as ai_stylist_chat
+from bot.utils.ai_analysis import _photo_to_base64
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -154,17 +154,14 @@ async def stylist_chat_photo(message: Message, state: FSMContext, bot: Bot):
     history.append({"role": "user", "content": caption})
 
     file_id = message.photo[-1].file_id
+    photo_b64 = None
     try:
-        file = await bot.get_file(file_id)
-        tg_path = file.file_path
-        if tg_path:
-            file_bytes = await bot.download_file(tg_path)
-            photo_b64 = base64.b64encode(file_bytes.read()).decode("utf-8")
-        else:
-            photo_b64 = None
+        photo_b64 = await _photo_to_base64(bot, file_id)
+        logger.info(f"Stylist photo downloaded successfully, file_id={file_id}")
     except Exception as e:
-        logger.error(f"Stylist photo download error: {e}")
-        photo_b64 = None
+        logger.error(f"Stylist photo download error: {e}", exc_info=True)
+        await message.answer("⚠️ Не удалось загрузить фото. Попробуй отправить ещё раз.")
+        return
 
     await message.answer("🤔 Анализирую образ...")
     reply = await ai_stylist_chat(history, photo_b64)

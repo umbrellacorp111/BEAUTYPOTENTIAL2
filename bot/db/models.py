@@ -45,6 +45,16 @@ class StylistApplication(Base):
     created_at = mapped_column(DateTime, server_default=func.now())
 
 
+class SavedAnalysis(Base):
+    __tablename__ = "saved_analyses"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    report_type: Mapped[str] = mapped_column(String(32), nullable=False, default="full")
+    report_text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at = mapped_column(DateTime, server_default=func.now())
+
+
 class PendingPayment(Base):
     """Персистентное хранилище ожидающих платежей.
     Заменяет словарь pending_payments в памяти процесса.

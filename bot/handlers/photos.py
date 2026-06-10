@@ -202,6 +202,8 @@ async def use_credit_yes(callback: CallbackQuery, state: FSMContext, bot: Bot):
     report = await full_report(bot, photo_ids, name, age, goals, dialogue_history=dialogue_msgs)
     await update_user(callback.from_user.id, result_text=report, status="completed")
     await save_report_file(callback.from_user.id, report)
+    from bot.db.queries import save_analysis
+    await save_analysis(callback.from_user.id, "full", report)
     from bot.texts.result import FULL_REPORT_HEADER, FULL_REPORT_FOOTER
     full = FULL_REPORT_HEADER.format(name=name) + "\n" + report + "\n" + FULL_REPORT_FOOTER
     await state.set_state(UserState.result)

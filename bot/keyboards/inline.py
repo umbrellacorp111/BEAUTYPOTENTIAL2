@@ -5,7 +5,20 @@ from aiogram.types import InlineKeyboardMarkup
 def start_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="🔍 Начать разбор", callback_data="start_survey")
+    builder.button(text="📂 Мои разборы", callback_data="my_analyses")
     builder.button(text="👗 ИИ-Стилист PRO", callback_data="stylist_pro_info")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def analyses_list_keyboard(analyses: list) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for a in analyses:
+        date_str = a.created_at.strftime("%d.%m.%Y %H:%M")
+        label = f"📄 Разбор #{a.id} от {date_str}"
+        builder.button(text=label, callback_data=f"view_analysis_{a.id}")
+    builder.button(text="🏠 В начало", callback_data="go_home")
+    builder.adjust(1)
     return builder.as_markup()
 
 

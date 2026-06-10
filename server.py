@@ -7,6 +7,7 @@ from sqlalchemy import text
 from bot.config import config
 from bot.db.session import engine
 from bot.db.models import Base
+from bot.db.queries import migrate_existing_reports
 from bot.handlers import start, registration, photos, payment, result, feedback, admin, stylist
 from bot.handlers.payment import yukassa_webhook_handler
 
@@ -25,6 +26,7 @@ async def on_startup():
             await conn.execute(text("ALTER TABLE users ADD COLUMN free_used INTEGER DEFAULT 0"))
         if "stylist_access_until" not in cols:
             await conn.execute(text("ALTER TABLE users ADD COLUMN stylist_access_until DATETIME DEFAULT NULL"))
+    await migrate_existing_reports()
 
 
 async def health_handler(request: web.Request) -> web.Response:

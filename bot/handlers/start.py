@@ -3,8 +3,8 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart
 from aiogram.fsm.context import FSMContext
 from bot.texts.welcome import WELCOME_TEXT
-from bot.keyboards.inline import start_keyboard, credit_packages_keyboard, use_credit_keyboard
-from bot.db.queries import get_user, create_user, get_pending_payment_by_user
+from bot.keyboards.inline import start_keyboard, credit_packages_keyboard, use_credit_keyboard, after_report_keyboard, analyses_list_keyboard
+from bot.db.queries import get_user, create_user, get_pending_payment_by_user, get_user_analyses, get_saved_analysis
 from bot.states.user_states import UserState
 
 router = Router()
@@ -20,19 +20,42 @@ async def cmd_start(message: Message, state: FSMContext):
             username=message.from_user.username,
             first_name=message.from_user.first_name,
         )
-        user = await get_user(message.from_user.id)
+    await message.answer(WELCOME_TEXT, reply_markup=start_keyboard())
 
-    # Восстановление: пользователь уже оплатил, но разбор не был выдан (рестарт бота)
-    if user and user.status == "completed" and user.result_text:
-        from bot.texts.result import FULL_REPORT_HEADER, FULL_REPORT_FOOTER
-        from bot.keyboards.inline import after_report_keyboard
-        name = user.name or ""
-        full = FULL_REPORT_HEADER.format(name=name) + "\n" + user.result_text + "\n" + FULL_REPORT_FOOTER
-        await state.set_state(UserState.result)
-        await message.answer("🔄 Восстанавливаю твой разбор...\n\n" + full, reply_markup=after_report_keyboard())
+
+@router.callback_query(F.data == "my_analyses")
+async def my_analyses(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    analyses = await get_user_analyses(callback.from_user.id)
+    if not analyses:
+        await callback.message.answer(
+            "📂 У вас пока нет сохранённых разборов.",
+            reply_markup=start_keyboard(),
+        )
         return
 
-    await message.answer(WELCOME_TEXT, reply_markup=start_keyboard())
+    if len(analyses) == 1:
+        a = analyses[0]
+        await state.set_state(UserState.result)
+        await callback.message.answer(a.report_text, reply_markup=after_report_keyboard())
+        return
+
+    await callback.message.answer(
+        "📂 Ваши разборы:",
+        reply_markup=analyses_list_keyboard(analyses),
+    )
+
+
+@router.callback_query(F.data.startswith("view_analysis_"))
+async def view_analysis(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    analysis_id = int(callback.data.replace("view_analysis_", ""))
+    a = await get_saved_analysis(analysis_id)
+    if not a:
+        await callback.message.answer("❌ Разбор не найден.")
+        return
+    await state.set_state(UserState.result)
+    await callback.message.answer(a.report_text, reply_markup=after_report_keyboard())
 
 
 @router.callback_query(F.data == "start_survey")
