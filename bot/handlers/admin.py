@@ -296,7 +296,7 @@ async def admin_godmode_info(callback: CallbackQuery, state: FSMContext):
     )
 
 
-@router.message(AdminFilter(), AdminState.godmode_waiting, F.text.regex(r"^\d+$"))
+@router.message(AdminFilter(), AdminState.godmode_waiting, F.text.regexp(r"^\d+$"))
 async def admin_godmode_process(message: Message, state: FSMContext):
     uid = int(message.text.strip())
     user = await get_user(uid)
