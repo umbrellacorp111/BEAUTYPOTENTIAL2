@@ -1,4 +1,4 @@
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from bot.db.models import User
 from bot.db.session import async_session
 from datetime import datetime, timedelta
@@ -188,23 +188,24 @@ async def get_saved_analysis(analysis_id: int) -> SavedAnalysis | None:
 
 async def migrate_existing_reports():
     """Переносит старые result_text из users в saved_analyses."""
-    from bot.db.models import User
+    from bot.db.models import SavedAnalysis
     async with async_session() as session:
-        users = await session.execute(
-            select(User).where(User.result_text.isnot(None), User.result_text != "")
+        result = await session.execute(
+            text("SELECT id, telegram_id, result_text FROM users WHERE result_text IS NOT NULL AND result_text != ''")
         )
-        for user in users.scalars().all():
+        rows = result.all()
+        for row in rows:
             existing = await session.execute(
                 select(SavedAnalysis).where(
-                    SavedAnalysis.telegram_id == user.telegram_id,
-                    SavedAnalysis.report_text == user.result_text,
+                    SavedAnalysis.telegram_id == row.telegram_id,
+                    SavedAnalysis.report_text == row.result_text,
                 )
             )
             if not existing.scalar_one_or_none():
                 session.add(SavedAnalysis(
-                    telegram_id=user.telegram_id,
+                    telegram_id=row.telegram_id,
                     report_type="full",
-                    report_text=user.result_text,
+                    report_text=row.result_text,
                 ))
         await session.commit()
 
