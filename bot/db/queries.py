@@ -86,6 +86,61 @@ async def add_credits(telegram_id: int, amount: int) -> User | None:
 
 
 # ──────────────────────────────────────────────
+# StylistApplication queries
+# ──────────────────────────────────────────────
+
+from bot.db.models import StylistApplication
+
+
+async def create_stylist_application(
+    telegram_id: int,
+    username: str | None,
+    first_name: str | None,
+    payment_date: datetime,
+    last_photo_id: str | None = None,
+    analysis_text: str | None = None,
+) -> StylistApplication:
+    async with async_session() as session:
+        app = StylistApplication(
+            telegram_id=telegram_id,
+            username=username,
+            first_name=first_name,
+            payment_date=payment_date,
+            last_photo_id=last_photo_id,
+            analysis_text=analysis_text,
+            status="pending",
+        )
+        session.add(app)
+        await session.commit()
+        await session.refresh(app)
+        return app
+
+
+async def get_stylist_applications(status: str | None = None) -> list[StylistApplication]:
+    async with async_session() as session:
+        if status:
+            result = await session.execute(
+                select(StylistApplication)
+                .where(StylistApplication.status == status)
+                .order_by(StylistApplication.created_at.desc())
+            )
+        else:
+            result = await session.execute(
+                select(StylistApplication)
+                .order_by(StylistApplication.created_at.desc())
+            )
+        return list(result.scalars().all())
+
+
+async def get_stylist_application(app_id: int) -> StylistApplication | None:
+    async with async_session() as session:
+        result = await session.execute(
+            select(StylistApplication).where(StylistApplication.id == app_id)
+        )
+        return result.scalar_one_or_none()
+
+
+# ──────────────────────────────────────────────
 # PendingPayment queries
 # ──────────────────────────────────────────────
 

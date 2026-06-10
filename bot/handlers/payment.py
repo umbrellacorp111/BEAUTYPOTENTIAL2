@@ -18,6 +18,7 @@ from bot.db.queries import (
     update_user, get_user, add_credits,
     create_pending_payment, get_pending_payment,
     complete_pending_payment, fail_pending_payment,
+    create_stylist_application,
 )
 from bot.utils.ai_analysis import full_report
 from bot.handlers.photos import save_report_file
@@ -199,24 +200,37 @@ async def _process_successful_payment(
             payment_id=payment_id,
             payment_amount=amount,
         )
+        user = await get_user(telegram_id)
+        photo_ids = state_data.get("photo_ids", [])
+        last_photo_id = photo_ids[-1] if photo_ids else None
+        analysis_text = state_data.get("free_analysis", {}).get("free_text", "")
+        app = await create_stylist_application(
+            telegram_id=telegram_id,
+            username=user.username if user else None,
+            first_name=user.first_name if user else None,
+            payment_date=datetime.utcnow(),
+            last_photo_id=last_photo_id,
+            analysis_text=analysis_text,
+        )
+        from bot.texts.stylist import STYLIST_APPLICATION_USER_NOTIFY, STYLIST_APPLICATION_ADMIN_NOTIFY
         await bot.send_message(
             telegram_id,
-            f"✅ Оплачено {pkg['rub']}₽\n\n👔 Готовлю персональный разбор от стилиста..."
+            STYLIST_APPLICATION_USER_NOTIFY.format(app_id=app.id),
         )
-        name = state_data.get("name", "")
-        age = state_data.get("age", 25)
-        goals = state_data.get("selected_goals", [])
-        photo_ids = state_data.get("photo_ids", [])
-        dialogue_msgs = state_data.get("dialogue_messages", [])
-        report = await full_report(bot, photo_ids, name, age, goals, dialogue_history=dialogue_msgs)
-        await update_user(telegram_id, result_text=report, status="completed")
-        await save_report_file(telegram_id, report)
-        full_text = FULL_REPORT_HEADER.format(name=name) + "\n" + report + "\n" + FULL_REPORT_FOOTER
-        if state:
-            await state.set_state(UserState.result)
-        await bot.send_message(telegram_id, full_text, reply_markup=after_report_keyboard())
         await save_order_file(telegram_id, pkg, 0)
-        # Отмечаем платёж выполненным и очищаем временные данные
+        admin_chat_id = config.ADMIN_CHAT_ID
+        if admin_chat_id:
+            await bot.send_message(
+                admin_chat_id,
+                STYLIST_APPLICATION_ADMIN_NOTIFY.format(
+                    app_id=app.id,
+                    first_name=user.first_name if user else "—",
+                    user_id=telegram_id,
+                    username=user.username if user else "—",
+                    payment_date=app.payment_date.strftime("%d.%m.%Y %H:%M"),
+                    photo_status="сохранено" if last_photo_id else "отсутствует",
+                ),
+            )
         await complete_pending_payment(payment_id)
     else:
         pkg = config.CREDIT_PACKAGES[package_index]

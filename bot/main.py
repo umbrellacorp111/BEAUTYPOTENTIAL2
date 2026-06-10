@@ -27,7 +27,7 @@ async def on_startup():
         if "stylist_access_until" not in cols:
             await conn.execute(text("ALTER TABLE users ADD COLUMN stylist_access_until DATETIME DEFAULT NULL"))
             logging.info("Added column 'stylist_access_until' to users table")
-    logging.info("Database ready (pending_payments table ensured)")
+    logging.info("Database ready")
 
 
 async def on_shutdown():

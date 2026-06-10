@@ -5,7 +5,7 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from bot.filters.admin import AdminFilter
 from bot.keyboards.inline import *
-from bot.db.queries import get_all_users, get_user_by_id, get_status_counts
+from bot.db.queries import get_all_users, get_user_by_id, get_status_counts, get_stylist_applications
 from bot.config import config
 
 router = Router()
@@ -37,3 +37,22 @@ async def admin_orders(message: Message):
         with open(fpath, "r", encoding="utf-8") as f:
             content = f.read()
         await message.answer(f"<b>{fname}</b>\n<pre>{content}</pre>")
+
+
+@router.message(Command("stylist_apps"), AdminFilter())
+async def admin_stylist_apps(message: Message):
+    apps = await get_stylist_applications()
+    if not apps:
+        await message.answer("Нет заявок на разбор от стилиста.")
+        return
+    for app in apps:
+        photo_status = "✅ есть" if app.last_photo_id else "❌ нет"
+        text = (
+            f"🧾 Заявка #{app.id}\n"
+            f"👤 {app.first_name or '—'} (@{app.username or '—'})\n"
+            f"📅 {app.payment_date.strftime('%d.%m.%Y %H:%M')}\n"
+            f"📸 Фото: {photo_status}\n"
+            f"📋 Статус: {app.status}\n"
+            f"🆔 {app.telegram_id}"
+        )
+        await message.answer(text)

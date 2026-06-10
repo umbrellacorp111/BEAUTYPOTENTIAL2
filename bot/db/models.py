@@ -31,6 +31,20 @@ class User(Base):
     updated_at = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class StylistApplication(Base):
+    __tablename__ = "stylist_applications"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    first_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    payment_date: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    last_photo_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    analysis_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    created_at = mapped_column(DateTime, server_default=func.now())
+
+
 class PendingPayment(Base):
     """Персистентное хранилище ожидающих платежей.
     Заменяет словарь pending_payments в памяти процесса.
