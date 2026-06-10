@@ -1,4 +1,6 @@
-STYLIST_PRO_INFO = """
+from bot.config import config
+
+STYLIST_PRO_INFO = f"""
 👗 ИИ-Стилист PRO
 
 Персональный AI-стилист на 30 дней.
@@ -10,13 +12,13 @@ STYLIST_PRO_INFO = """
 • Обсуждение внешности
 • Индивидуальные рекомендации
 
-Стоимость: 1₽ на 30 дней
+Стоимость: {config.STYLIST_PRO_PACKAGE["rub"]}₽ на 30 дней
 """
 
-STYLIST_PRO_PAYMENT_PROMPT = """
+STYLIST_PRO_PAYMENT_PROMPT = f"""
 💳 Оплата подписки ИИ-Стилист PRO
 
-Сумма: 1₽
+Сумма: {config.STYLIST_PRO_PACKAGE["rub"]}₽
 Срок: 30 дней
 """
 

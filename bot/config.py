@@ -16,22 +16,22 @@ class Config:
     BOT_LINK: str = os.getenv("BOT_LINK", "https://t.me/bot")
 
     CREDIT_PACKAGES = [
-        {"label": "1 разбор — 1₽", "stars": 25, "rub": 1, "credits": 1},
-        {"label": "5 разборов — 1₽", "stars": 75, "rub": 1, "credits": 5},
-        {"label": "100 разборов — 1₽", "stars": 250, "rub": 1, "credits": 100},
+        {"label": "1 разбор — 99₽", "stars": 25, "rub": 99, "credits": 1},
+        {"label": "5 разборов — 300₽", "stars": 75, "rub": 300, "credits": 5},
+        {"label": "100 запросов — 990₽", "stars": 250, "rub": 990, "credits": 100},
     ]
 
     STYLIST_PACKAGE = {
-        "label": "Персональный анализ от стилиста — 1₽",
+        "label": "Персональный анализ от стилиста — 1199₽",
         "stars": 300,
-        "rub": 1,
+        "rub": 1199,
         "credits": 0,
         "is_stylist": True,
     }
 
     STYLIST_PRO_PACKAGE = {
-        "label": "👗 ИИ-Стилист PRO — 30 дней — 1₽",
-        "rub": 1,
+        "label": "👗 ИИ-Стилист PRO — 30 дней — 490₽",
+        "rub": 490,
         "days": 30,
     }
 

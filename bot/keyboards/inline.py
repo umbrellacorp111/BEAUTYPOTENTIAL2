@@ -77,12 +77,14 @@ def free_analysis_keyboard() -> InlineKeyboardMarkup:
 
 
 def credit_packages_keyboard(balance: int) -> InlineKeyboardMarkup:
+    from bot.config import config
     builder = InlineKeyboardBuilder()
-    builder.button(text="1 разбор — 1₽", callback_data="buy_1")
-    builder.button(text="5 разборов — 1₽", callback_data="buy_5")
-    builder.button(text="100 разборов — 1₽", callback_data="buy_100")
+    labels = [p["label"] for p in config.CREDIT_PACKAGES]
+    callbacks = ["buy_1", "buy_5", "buy_100"]
+    for label, cb in zip(labels, callbacks):
+        builder.button(text=label, callback_data=cb)
     builder.button(
-        text="👔 Персональный анализ от стилиста — 1₽",
+        text=config.STYLIST_PACKAGE["label"],
         callback_data="buy_stylist",
     )
     builder.adjust(1)
@@ -114,16 +116,20 @@ def after_report_keyboard() -> InlineKeyboardMarkup:
 
 
 def stylist_pro_info_keyboard() -> InlineKeyboardMarkup:
+    from bot.config import config
+    rub = config.STYLIST_PRO_PACKAGE["rub"]
     builder = InlineKeyboardBuilder()
-    builder.button(text="💳 Купить за 1₽", callback_data="stylist_pro_buy")
+    builder.button(text=f"💳 Купить за {rub}₽", callback_data="stylist_pro_buy")
     builder.button(text="🔙 Назад", callback_data="go_home")
     builder.adjust(1)
     return builder.as_markup()
 
 
 def stylist_renew_keyboard() -> InlineKeyboardMarkup:
+    from bot.config import config
+    rub = config.STYLIST_PRO_PACKAGE["rub"]
     builder = InlineKeyboardBuilder()
-    builder.button(text="💳 Продлить за 1₽", callback_data="stylist_pro_buy")
+    builder.button(text=f"💳 Продлить за {rub}₽", callback_data="stylist_pro_buy")
     builder.button(text="🔙 Назад", callback_data="go_home")
     builder.adjust(1)
     return builder.as_markup()
