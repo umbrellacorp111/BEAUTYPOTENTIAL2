@@ -31,15 +31,19 @@ MIGRATIONS = [
 async def on_startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Migrations in a separate connection to avoid DDL transaction issues
+    async with engine.begin() as conn:
         for table, column, definition in MIGRATIONS:
             try:
-                res = await conn.execute(text(f"PRAGMA table_info({table})"))
-                exists = any(row[1] == column for row in res.all())
-                if not exists:
-                    await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {definition}"))
-                    logger.info(f"Added column {table}.{column}")
+                await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {definition}"))
+                logger.info(f"Added column {table}.{column}")
             except Exception as e:
-                logger.error(f"Migration failed for {table}.{column}: {e}")
+                msg = str(e).lower()
+                if "duplicate" in msg or "already exists" in msg:
+                    logger.info(f"Column {table}.{column} already exists")
+                else:
+                    logger.error(f"Migration error for {table}.{column}: {e}")
 
     await migrate_existing_reports()
 

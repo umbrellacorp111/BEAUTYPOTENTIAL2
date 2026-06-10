@@ -11,39 +11,35 @@ from bot.handlers import start, registration, photos, payment, result, feedback,
 
 logging.basicConfig(level=logging.INFO)
 
+MIGRATIONS = [
+    ("users", "credits", "credits INTEGER DEFAULT 0"),
+    ("users", "free_used", "free_used INTEGER DEFAULT 0"),
+    ("users", "stylist_access_until", "stylist_access_until DATETIME DEFAULT NULL"),
+    ("users", "godmode", "godmode INTEGER DEFAULT 0"),
+    ("users", "stylist_free_used", "stylist_free_used INTEGER DEFAULT 0"),
+    ("stylist_applications", "name", "name VARCHAR(255) DEFAULT NULL"),
+    ("stylist_applications", "age", "age INTEGER DEFAULT NULL"),
+    ("stylist_applications", "goals", "goals JSON DEFAULT '[]'"),
+    ("stylist_applications", "photo_ids", "photo_ids JSON DEFAULT '[]'"),
+]
+
 
 async def on_startup():
     async with engine.begin() as conn:
-        # Создаёт все таблицы включая новую pending_payments
         await conn.run_sync(Base.metadata.create_all)
-        result = await conn.execute(text("PRAGMA table_info(users)"))
-        rows = result.all()
-        cols = {row[1] for row in rows}
-        if "credits" not in cols:
-            await conn.execute(text("ALTER TABLE users ADD COLUMN credits INTEGER DEFAULT 0"))
-            logging.info("Added column 'credits' to users table")
-        if "free_used" not in cols:
-            await conn.execute(text("ALTER TABLE users ADD COLUMN free_used INTEGER DEFAULT 0"))
-            logging.info("Added column 'free_used' to users table")
-        if "stylist_access_until" not in cols:
-            await conn.execute(text("ALTER TABLE users ADD COLUMN stylist_access_until DATETIME DEFAULT NULL"))
-            logging.info("Added column 'stylist_access_until' to users table")
 
-        # Миграция новых полей stylist_applications
-        result2 = await conn.execute(text("PRAGMA table_info(stylist_applications)"))
-        app_cols = {row[1] for row in result2.all()}
-        if "name" not in app_cols:
-            await conn.execute(text("ALTER TABLE stylist_applications ADD COLUMN name VARCHAR(255) DEFAULT NULL"))
-            logging.info("Added column 'name' to stylist_applications")
-        if "age" not in app_cols:
-            await conn.execute(text("ALTER TABLE stylist_applications ADD COLUMN age INTEGER DEFAULT NULL"))
-            logging.info("Added column 'age' to stylist_applications")
-        if "goals" not in app_cols:
-            await conn.execute(text("ALTER TABLE stylist_applications ADD COLUMN goals JSON DEFAULT '[]'"))
-            logging.info("Added column 'goals' to stylist_applications")
-        if "photo_ids" not in app_cols:
-            await conn.execute(text("ALTER TABLE stylist_applications ADD COLUMN photo_ids JSON DEFAULT '[]'"))
-            logging.info("Added column 'photo_ids' to stylist_applications")
+    async with engine.begin() as conn:
+        for table, column, definition in MIGRATIONS:
+            try:
+                await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {definition}"))
+                logging.info(f"Added column {table}.{column}")
+            except Exception as e:
+                msg = str(e).lower()
+                if "duplicate" in msg or "already exists" in msg:
+                    logging.info(f"Column {table}.{column} already exists")
+                else:
+                    logging.error(f"Migration error for {table}.{column}: {e}")
+
     await migrate_existing_reports()
     logging.info("Database ready")
 
