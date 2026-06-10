@@ -65,11 +65,11 @@ def free_analysis_keyboard() -> InlineKeyboardMarkup:
 
 def credit_packages_keyboard(balance: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="1 разбор — 99₽", callback_data="buy_1")
-    builder.button(text="5 разборов — 290₽", callback_data="buy_5")
-    builder.button(text="100 разборов — 999₽", callback_data="buy_100")
+    builder.button(text="1 разбор — 1₽", callback_data="buy_1")
+    builder.button(text="5 разборов — 1₽", callback_data="buy_5")
+    builder.button(text="100 разборов — 1₽", callback_data="buy_100")
     builder.button(
-        text="👔 Персональный анализ от стилиста — 1 199₽",
+        text="👔 Персональный анализ от стилиста — 1₽",
         callback_data="buy_stylist",
     )
     builder.adjust(1)
@@ -102,7 +102,7 @@ def after_report_keyboard() -> InlineKeyboardMarkup:
 
 def stylist_pro_info_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="💳 Купить за 490₽", callback_data="stylist_pro_buy")
+    builder.button(text="💳 Купить за 1₽", callback_data="stylist_pro_buy")
     builder.button(text="🔙 Назад", callback_data="go_home")
     builder.adjust(1)
     return builder.as_markup()
@@ -110,7 +110,7 @@ def stylist_pro_info_keyboard() -> InlineKeyboardMarkup:
 
 def stylist_renew_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="💳 Продлить за 490₽", callback_data="stylist_pro_buy")
+    builder.button(text="💳 Продлить за 1₽", callback_data="stylist_pro_buy")
     builder.button(text="🔙 Назад", callback_data="go_home")
     builder.adjust(1)
     return builder.as_markup()

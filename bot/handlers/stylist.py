@@ -70,7 +70,7 @@ async def stylist_pro_buy(callback: CallbackQuery, state: FSMContext):
         await state.update_data(stylist_payment_id=payment_id)
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="💳 Оплатить 490₽", url=pay_url)],
+            [InlineKeyboardButton(text="💳 Оплатить 1₽", url=pay_url)],
             [InlineKeyboardButton(text="✅ Я оплатил", callback_data=f"stylist_check_{payment_id}")],
             [InlineKeyboardButton(text="🔙 Назад", callback_data="stylist_pro_info")],
         ])
