@@ -167,6 +167,9 @@ async def confirm_edit(callback: CallbackQuery, state: FSMContext):
 async def buy_full_report(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     user = await get_user(callback.from_user.id)
+    if user and user.godmode:
+        await use_credit_yes(callback, state, bot)
+        return
     balance = user.credits if user else 0
     if balance > 0:
         await state.set_state(UserState.credits_menu)
@@ -188,10 +191,11 @@ async def buy_full_report(callback: CallbackQuery, state: FSMContext):
 async def use_credit_yes(callback: CallbackQuery, state: FSMContext, bot: Bot):
     await callback.answer()
     user = await get_user(callback.from_user.id)
-    if not user or not user.credits or user.credits < 1:
+    if not user or (not user.godmode and (not user.credits or user.credits < 1)):
         await callback.message.answer("Недостаточно кредитов.")
         return
-    await update_user(callback.from_user.id, credits=user.credits - 1)
+    if not user.godmode:
+        await update_user(callback.from_user.id, credits=user.credits - 1)
     data = await state.get_data()
     age = data.get("age", 25)
     goals = data.get("selected_goals", [])

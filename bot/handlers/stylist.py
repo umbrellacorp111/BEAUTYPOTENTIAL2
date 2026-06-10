@@ -12,7 +12,7 @@ from bot.states.user_states import UserState
 from bot.keyboards.inline import (
     stylist_pro_info_keyboard, stylist_renew_keyboard, stylist_chat_keyboard,
 )
-from bot.db.queries import get_user, update_user, has_stylist_access
+from bot.db.queries import get_user, update_user, has_stylist_access, increment_stylist_free_used
 from bot.texts.stylist import *
 from bot.utils.ai_stylist import stylist_chat as ai_stylist_chat
 from bot.utils.ai_analysis import _photo_to_base64
@@ -25,7 +25,7 @@ router = Router()
 async def stylist_pro_info(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     user = await get_user(callback.from_user.id)
-    if user and user.stylist_access_until and user.stylist_access_until > datetime.utcnow():
+    if user and (user.godmode or (user.stylist_access_until and user.stylist_access_until > datetime.utcnow())):
         await state.set_state(UserState.stylist_chat)
         await state.update_data(stylist_messages=[])
         until_str = user.stylist_access_until.strftime("%d.%m.%Y %H:%M UTC")
@@ -33,11 +33,43 @@ async def stylist_pro_info(callback: CallbackQuery, state: FSMContext):
             STYLIST_PRO_ACTIVE.format(until=until_str) + STYLIST_PRO_WELCOME,
             reply_markup=stylist_chat_keyboard(),
         )
+    elif user and (user.stylist_free_used or 0) < config.STYLIST_FREE_TRIAL_MESSAGES:
+        used = user.stylist_free_used or 0
+        remaining = config.STYLIST_FREE_TRIAL_MESSAGES - used
+        await state.set_state(UserState.stylist_chat)
+        await state.update_data(stylist_messages=[])
+        await callback.message.answer(
+            STYLIST_PRO_TRIAL.format(used=used, remaining=remaining),
+            reply_markup=stylist_chat_keyboard(),
+        )
     else:
         await callback.message.answer(
             STYLIST_PRO_INFO,
             reply_markup=stylist_pro_info_keyboard(),
         )
+
+
+@router.callback_query(F.data == "stylist_pro_trial_start")
+async def stylist_pro_trial_start(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    user = await get_user(callback.from_user.id)
+    if not user:
+        await callback.message.answer("❌ Пользователь не найден.")
+        return
+    if (user.stylist_free_used or 0) >= config.STYLIST_FREE_TRIAL_MESSAGES:
+        await callback.message.answer(
+            STYLIST_PRO_TRIAL_EXHAUSTED,
+            reply_markup=stylist_renew_keyboard(),
+        )
+        return
+    used = user.stylist_free_used or 0
+    remaining = config.STYLIST_FREE_TRIAL_MESSAGES - used
+    await state.set_state(UserState.stylist_chat)
+    await state.update_data(stylist_messages=[])
+    await callback.message.answer(
+        STYLIST_PRO_TRIAL.format(used=used, remaining=remaining),
+        reply_markup=stylist_chat_keyboard(),
+    )
 
 
 @router.callback_query(F.data == "stylist_pro_buy")
@@ -116,15 +148,29 @@ async def stylist_pro_check_payment(callback: CallbackQuery, state: FSMContext, 
         await callback.message.answer("❌ Ошибка проверки. Попробуй позже.")
 
 
+async def _check_stylist_access(user) -> tuple[bool, str | None]:
+    """Returns (has_access, blocked_message). If blocked_message is None, access granted."""
+    if not user:
+        return False, STYLIST_PRO_EXPIRED
+    if user.godmode:
+        return True, None
+    if user.stylist_access_until and user.stylist_access_until > datetime.utcnow():
+        return True, None
+    used = user.stylist_free_used or 0
+    if used < config.STYLIST_FREE_TRIAL_MESSAGES:
+        return True, None
+    return False, STYLIST_PRO_TRIAL_EXHAUSTED
+
+
 @router.message(StateFilter(UserState.stylist_chat), F.text)
 async def stylist_chat_text(message: Message, state: FSMContext, bot: Bot):
-    if not await has_stylist_access(message.from_user.id):
-        await update_user(message.from_user.id, stylist_access_until=None)
+    user = await get_user(message.from_user.id)
+    has_access, blocked_msg = await _check_stylist_access(user)
+    if not has_access:
+        if user:
+            await update_user(message.from_user.id, stylist_access_until=None)
         await state.clear()
-        await message.answer(
-            STYLIST_PRO_EXPIRED,
-            reply_markup=stylist_renew_keyboard(),
-        )
+        await message.answer(blocked_msg, reply_markup=stylist_renew_keyboard())
         return
 
     data = await state.get_data()
@@ -137,16 +183,19 @@ async def stylist_chat_text(message: Message, state: FSMContext, bot: Bot):
     await state.update_data(stylist_messages=history)
     await message.answer(reply, reply_markup=stylist_chat_keyboard())
 
+    if not user.godmode and not (user.stylist_access_until and user.stylist_access_until > datetime.utcnow()):
+        await increment_stylist_free_used(message.from_user.id)
+
 
 @router.message(StateFilter(UserState.stylist_chat), F.photo)
 async def stylist_chat_photo(message: Message, state: FSMContext, bot: Bot):
-    if not await has_stylist_access(message.from_user.id):
-        await update_user(message.from_user.id, stylist_access_until=None)
+    user = await get_user(message.from_user.id)
+    has_access, blocked_msg = await _check_stylist_access(user)
+    if not has_access:
+        if user:
+            await update_user(message.from_user.id, stylist_access_until=None)
         await state.clear()
-        await message.answer(
-            STYLIST_PRO_EXPIRED,
-            reply_markup=stylist_renew_keyboard(),
-        )
+        await message.answer(blocked_msg, reply_markup=stylist_renew_keyboard())
         return
 
     data = await state.get_data()
@@ -169,3 +218,6 @@ async def stylist_chat_photo(message: Message, state: FSMContext, bot: Bot):
     history.append({"role": "assistant", "content": reply})
     await state.update_data(stylist_messages=history)
     await message.answer(reply, reply_markup=stylist_chat_keyboard())
+
+    if not user.godmode and not (user.stylist_access_until and user.stylist_access_until > datetime.utcnow()):
+        await increment_stylist_free_used(message.from_user.id)

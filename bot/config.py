@@ -35,6 +35,8 @@ class Config:
         "days": 30,
     }
 
+    STYLIST_FREE_TRIAL_MESSAGES = 5
+
     @property
     def database_url(self) -> str:
         db_path = os.path.join(self.DATA_DIR, "bot.db")

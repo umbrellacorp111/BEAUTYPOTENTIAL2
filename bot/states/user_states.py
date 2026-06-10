@@ -14,3 +14,7 @@ class UserState(StatesGroup):
     awaiting_payment = State()
     result = State()
     stylist_chat = State()
+
+
+class AdminState(StatesGroup):
+    godmode_waiting = State()

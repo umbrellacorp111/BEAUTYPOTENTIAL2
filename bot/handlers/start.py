@@ -62,7 +62,7 @@ async def view_analysis(callback: CallbackQuery, state: FSMContext):
 async def start_survey(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
     user = await get_user(callback.from_user.id)
-    if user and user.free_used:
+    if user and user.free_used and not user.godmode:
         balance = user.credits or 0
         if balance > 0:
             from bot.texts.payment import USE_CREDIT_PROMPT

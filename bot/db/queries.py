@@ -362,6 +362,34 @@ async def update_stylist_application_status(app_id: int, status: str) -> Stylist
         return app
 
 
+async def increment_stylist_free_used(telegram_id: int) -> User | None:
+    async with async_session() as session:
+        result = await session.execute(
+            select(User).where(User.telegram_id == telegram_id)
+        )
+        user = result.scalar_one_or_none()
+        if not user:
+            return None
+        user.stylist_free_used = (user.stylist_free_used or 0) + 1
+        await session.commit()
+        await session.refresh(user)
+        return user
+
+
+async def set_godmode(telegram_id: int, enabled: bool) -> User | None:
+    async with async_session() as session:
+        result = await session.execute(
+            select(User).where(User.telegram_id == telegram_id)
+        )
+        user = result.scalar_one_or_none()
+        if not user:
+            return None
+        user.godmode = enabled
+        await session.commit()
+        await session.refresh(user)
+        return user
+
+
 async def fail_pending_payment(payment_id: str) -> None:
     """Отметить платёж как неудачный."""
     async with async_session() as session:

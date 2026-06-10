@@ -26,6 +26,10 @@ async def on_startup():
             await conn.execute(text("ALTER TABLE users ADD COLUMN free_used INTEGER DEFAULT 0"))
         if "stylist_access_until" not in cols:
             await conn.execute(text("ALTER TABLE users ADD COLUMN stylist_access_until DATETIME DEFAULT NULL"))
+        if "godmode" not in cols:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN godmode INTEGER DEFAULT 0"))
+        if "stylist_free_used" not in cols:
+            await conn.execute(text("ALTER TABLE users ADD COLUMN stylist_free_used INTEGER DEFAULT 0"))
         res2 = await conn.execute(text("PRAGMA table_info(stylist_applications)"))
         app_cols = {row[1] for row in res2.all()}
         if "name" not in app_cols:

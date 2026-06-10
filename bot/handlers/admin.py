@@ -6,15 +6,17 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from bot.filters.admin import AdminFilter, AdminCbFilter
+from bot.states.user_states import AdminState
 from bot.keyboards.inline import (
     admin_menu_keyboard, admin_apps_list_keyboard, admin_app_detail_keyboard,
+    admin_godmode_keyboard,
 )
 from bot.db.queries import (
     get_all_users, get_user_by_id, get_stylist_applications,
     get_stylist_application, get_total_users, get_total_payments,
     get_total_applications, get_applications_count_by_status,
     get_active_subscriptions_count, get_recent_users,
-    update_stylist_application_status,
+    update_stylist_application_status, set_godmode, get_user,
 )
 from bot.config import config
 
@@ -45,8 +47,9 @@ async def admin_no_access(message: Message):
 # ──────────────────────────────────────────────
 
 @router.callback_query(AdminCbFilter(), F.data == "admin_back_menu")
-async def admin_back_menu(callback: CallbackQuery):
+async def admin_back_menu(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
+    await state.clear()
     await callback.message.edit_text(
         "🛠 Админ-панель\n\nВыберите раздел:",
         reply_markup=admin_menu_keyboard(),
@@ -264,6 +267,7 @@ async def admin_find_user(message: Message):
         f"👤 Имя: {user.first_name or '—'}\n"
         f"📝 Статус: {user.status}\n"
         f"💰 Кредиты: {user.credits or 0}\n"
+        f"👑 Godmode: {'да' if user.godmode else 'нет'}\n"
         f"🔓 Бесплатный использован: {'да' if user.free_used else 'нет'}\n"
         f"🤖 Стилист PRO до: {user.stylist_access_until.strftime('%d.%m.%Y') if user.stylist_access_until else '—'}\n"
         f"💳 Оплата: {user.payment_method or '—'} | {user.payment_amount or '—'}₽\n"
@@ -271,3 +275,50 @@ async def admin_find_user(message: Message):
         f"📅 Обновлён: {updated}"
     )
     await message.answer(text)
+
+
+# ──────────────────────────────────────────────
+# Godmode
+# ──────────────────────────────────────────────
+
+
+@router.callback_query(AdminCbFilter(), F.data == "admin_godmode")
+async def admin_godmode_info(callback: CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await state.set_state(AdminState.godmode_waiting)
+    await callback.message.edit_text(
+        "👑 *Godmode*\n\n"
+        "Когда godmode включён — пользователю всё бесплатно.\n"
+        "Кредиты не тратятся, доступ к стилисту PRO открыт.\n\n"
+        "Отправь *Telegram ID* пользователя:",
+        parse_mode="Markdown",
+        reply_markup=admin_godmode_keyboard(),
+    )
+
+
+@router.message(AdminFilter(), AdminState.godmode_waiting, F.text.regex(r"^\d+$"))
+async def admin_godmode_process(message: Message, state: FSMContext):
+    uid = int(message.text.strip())
+    user = await get_user(uid)
+    if not user:
+        await message.answer("❌ Пользователь не найден.")
+        await state.clear()
+        return
+    new_state = not user.godmode
+    await set_godmode(uid, new_state)
+    status = "✅ Включён" if new_state else "❌ Выключен"
+    await message.answer(
+        f"👑 Godmode для пользователя {uid} ({user.first_name or '—'}):\n"
+        f"Статус: {status}"
+    )
+    await state.clear()
+
+
+@router.message(AdminFilter(), AdminState.godmode_waiting)
+async def admin_godmode_invalid(message: Message, state: FSMContext):
+    await message.answer("❌ Отправь только числовой ID пользователя.")
+    await state.clear()
+    await message.answer(
+        "🛠 Админ-панель\n\nВыберите раздел:",
+        reply_markup=admin_menu_keyboard(),
+    )

@@ -118,7 +118,9 @@ def after_report_keyboard() -> InlineKeyboardMarkup:
 def stylist_pro_info_keyboard() -> InlineKeyboardMarkup:
     from bot.config import config
     rub = config.STYLIST_PRO_PACKAGE["rub"]
+    trial = config.STYLIST_FREE_TRIAL_MESSAGES
     builder = InlineKeyboardBuilder()
+    builder.button(text=f"🎁 Тест-драйв ({trial} ответов бесплатно)", callback_data="stylist_pro_trial_start")
     builder.button(text=f"💳 Купить за {rub}₽", callback_data="stylist_pro_buy")
     builder.button(text="🔙 Назад", callback_data="go_home")
     builder.adjust(1)
@@ -151,6 +153,7 @@ def admin_menu_keyboard() -> InlineKeyboardMarkup:
     builder.button(text="📋 Заявки стилиста", callback_data="admin_apps")
     builder.button(text="📊 Статистика", callback_data="admin_stats")
     builder.button(text="👥 Пользователи", callback_data="admin_users")
+    builder.button(text="👑 Godmode", callback_data="admin_godmode")
     builder.button(text="❌ Закрыть панель", callback_data="admin_close")
     builder.adjust(1)
     return builder.as_markup()
@@ -164,6 +167,12 @@ def admin_apps_list_keyboard(apps: list) -> InlineKeyboardMarkup:
         builder.button(text=label, callback_data=f"admin_app_{app.id}")
     builder.button(text="🔙 Назад", callback_data="admin_back_menu")
     builder.adjust(1)
+    return builder.as_markup()
+
+
+def admin_godmode_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 Назад", callback_data="admin_back_menu")
     return builder.as_markup()
 
 
