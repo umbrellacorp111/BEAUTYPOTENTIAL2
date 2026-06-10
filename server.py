@@ -15,32 +15,31 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-async def _add_column_if_missing(conn, table: str, column: str, definition: str):
-    try:
-        res = await conn.execute(text(f"PRAGMA table_info({table})"))
-        cols = {row[1] for row in res.all()}
-        if column not in cols:
-            await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {definition}"))
-            logger.info(f"Added column {table}.{column}")
-    except Exception as e:
-        logger.warning(f"Migration check for {table}.{column} failed: {e}")
+MIGRATIONS = [
+    ("users", "credits", "credits INTEGER DEFAULT 0"),
+    ("users", "free_used", "free_used INTEGER DEFAULT 0"),
+    ("users", "stylist_access_until", "stylist_access_until DATETIME DEFAULT NULL"),
+    ("users", "godmode", "godmode INTEGER DEFAULT 0"),
+    ("users", "stylist_free_used", "stylist_free_used INTEGER DEFAULT 0"),
+    ("stylist_applications", "name", "name VARCHAR(255) DEFAULT NULL"),
+    ("stylist_applications", "age", "age INTEGER DEFAULT NULL"),
+    ("stylist_applications", "goals", "goals JSON DEFAULT '[]'"),
+    ("stylist_applications", "photo_ids", "photo_ids JSON DEFAULT '[]'"),
+]
 
 
 async def on_startup():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-
-    # Separate connection for migrations to ensure DDL is committed
-    async with engine.begin() as conn:
-        await _add_column_if_missing(conn, "users", "credits", "credits INTEGER DEFAULT 0")
-        await _add_column_if_missing(conn, "users", "free_used", "free_used INTEGER DEFAULT 0")
-        await _add_column_if_missing(conn, "users", "stylist_access_until", "stylist_access_until DATETIME DEFAULT NULL")
-        await _add_column_if_missing(conn, "users", "godmode", "godmode INTEGER DEFAULT 0")
-        await _add_column_if_missing(conn, "users", "stylist_free_used", "stylist_free_used INTEGER DEFAULT 0")
-        await _add_column_if_missing(conn, "stylist_applications", "name", "name VARCHAR(255) DEFAULT NULL")
-        await _add_column_if_missing(conn, "stylist_applications", "age", "age INTEGER DEFAULT NULL")
-        await _add_column_if_missing(conn, "stylist_applications", "goals", "goals JSON DEFAULT '[]'")
-        await _add_column_if_missing(conn, "stylist_applications", "photo_ids", "photo_ids JSON DEFAULT '[]'")
+        for table, column, definition in MIGRATIONS:
+            try:
+                res = await conn.execute(text(f"PRAGMA table_info({table})"))
+                exists = any(row[1] == column for row in res.all())
+                if not exists:
+                    await conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {definition}"))
+                    logger.info(f"Added column {table}.{column}")
+            except Exception as e:
+                logger.error(f"Migration failed for {table}.{column}: {e}")
 
     await migrate_existing_reports()
 

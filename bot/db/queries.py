@@ -1,28 +1,40 @@
+import logging
 from sqlalchemy import select, func, text
+from sqlalchemy.exc import OperationalError
 from bot.db.models import User
 from bot.db.session import async_session
 from datetime import datetime, timedelta
 
 
-async def create_user(telegram_id: int, username: str | None, first_name: str | None) -> User:
+async def create_user(telegram_id: int, username: str | None, first_name: str | None) -> User | None:
     async with async_session() as session:
-        user = User(
-            telegram_id=telegram_id,
-            username=username,
-            first_name=first_name,
-        )
-        session.add(user)
-        await session.commit()
-        await session.refresh(user)
-        return user
+        try:
+            user = User(
+                telegram_id=telegram_id,
+                username=username,
+                first_name=first_name,
+            )
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
+            return user
+        except OperationalError as e:
+            logger = logging.getLogger(__name__)
+            logger.error(f"create_user failed (schema issue?): {e}")
+            return None
 
 
 async def get_user(telegram_id: int) -> User | None:
     async with async_session() as session:
-        result = await session.execute(
-            select(User).where(User.telegram_id == telegram_id)
-        )
-        return result.scalar_one_or_none()
+        try:
+            result = await session.execute(
+                select(User).where(User.telegram_id == telegram_id)
+            )
+            return result.scalar_one_or_none()
+        except OperationalError as e:
+            logger = logging.getLogger(__name__)
+            logger.error(f"get_user failed (schema issue?): {e}")
+            return None
 
 
 async def update_user(telegram_id: int, **kwargs) -> User | None:
