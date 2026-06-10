@@ -99,12 +99,20 @@ async def create_stylist_application(
     payment_date: datetime,
     last_photo_id: str | None = None,
     analysis_text: str | None = None,
+    name: str | None = None,
+    age: int | None = None,
+    goals: list | None = None,
+    photo_ids: list | None = None,
 ) -> StylistApplication:
     async with async_session() as session:
         app = StylistApplication(
             telegram_id=telegram_id,
             username=username,
             first_name=first_name,
+            name=name,
+            age=age,
+            goals=goals or [],
+            photo_ids=photo_ids or [],
             payment_date=payment_date,
             last_photo_id=last_photo_id,
             analysis_text=analysis_text,
@@ -280,6 +288,78 @@ async def has_stylist_access(telegram_id: int) -> bool:
 async def set_stylist_access(telegram_id: int, days: int = 30) -> User | None:
     until = datetime.utcnow() + timedelta(days=days)
     return await update_user(telegram_id, stylist_access_until=until)
+
+
+# ──────────────────────────────────────────────
+# Admin statistics queries
+# ──────────────────────────────────────────────
+
+
+async def get_total_users() -> int:
+    async with async_session() as session:
+        result = await session.execute(select(func.count(User.id)))
+        return result.scalar() or 0
+
+
+async def get_total_payments() -> int:
+    """Количество пользователей, совершивших хотя бы одну оплату."""
+    async with async_session() as session:
+        result = await session.execute(
+            select(func.count(User.id)).where(User.payment_id.isnot(None))
+        )
+        return result.scalar() or 0
+
+
+async def get_total_applications() -> int:
+    async with async_session() as session:
+        result = await session.execute(
+            select(func.count(StylistApplication.id))
+        )
+        return result.scalar() or 0
+
+
+async def get_applications_count_by_status(status: str) -> int:
+    async with async_session() as session:
+        result = await session.execute(
+            select(func.count(StylistApplication.id))
+            .where(StylistApplication.status == status)
+        )
+        return result.scalar() or 0
+
+
+async def get_active_subscriptions_count() -> int:
+    now = datetime.utcnow()
+    async with async_session() as session:
+        result = await session.execute(
+            select(func.count(User.id))
+            .where(
+                User.stylist_access_until.isnot(None),
+                User.stylist_access_until > now,
+            )
+        )
+        return result.scalar() or 0
+
+
+async def get_recent_users(limit: int = 5) -> list[User]:
+    async with async_session() as session:
+        result = await session.execute(
+            select(User).order_by(User.created_at.desc()).limit(limit)
+        )
+        return list(result.scalars().all())
+
+
+async def update_stylist_application_status(app_id: int, status: str) -> StylistApplication | None:
+    async with async_session() as session:
+        result = await session.execute(
+            select(StylistApplication).where(StylistApplication.id == app_id)
+        )
+        app = result.scalar_one_or_none()
+        if not app:
+            return None
+        app.status = status
+        await session.commit()
+        await session.refresh(app)
+        return app
 
 
 async def fail_pending_payment(payment_id: str) -> None:

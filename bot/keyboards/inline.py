@@ -133,3 +133,41 @@ def stylist_chat_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="🏠 В начало", callback_data="go_home")
     return builder.as_markup()
+
+
+# ──────────────────────────────────────────────
+# Admin panel keyboards
+# ──────────────────────────────────────────────
+
+
+def admin_menu_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📋 Заявки стилиста", callback_data="admin_apps")
+    builder.button(text="📊 Статистика", callback_data="admin_stats")
+    builder.button(text="👥 Пользователи", callback_data="admin_users")
+    builder.button(text="❌ Закрыть панель", callback_data="admin_close")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def admin_apps_list_keyboard(apps: list) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for app in apps:
+        status_icon = "🕐" if app.status == "pending" else "🔧"
+        label = f"{status_icon} Заявка #{app.id} — {app.first_name or '?'}"
+        builder.button(text=label, callback_data=f"admin_app_{app.id}")
+    builder.button(text="🔙 Назад", callback_data="admin_back_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def admin_app_detail_keyboard(app: object) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    if app.status == "pending":
+        builder.button(text="▶ Взять в работу", callback_data=f"admin_app_take_{app.id}")
+    if app.status == "in_progress":
+        builder.button(text="✅ Завершить", callback_data=f"admin_app_complete_{app.id}")
+    builder.button(text="🗑 Удалить", callback_data=f"admin_app_delete_{app.id}")
+    builder.button(text="🔙 Назад", callback_data="admin_apps")
+    builder.adjust(1)
+    return builder.as_markup()

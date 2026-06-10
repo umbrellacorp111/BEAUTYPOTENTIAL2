@@ -4,6 +4,9 @@ import os
 class Config:
     BOT_TOKEN: str = os.getenv("BOT_TOKEN", "")
     ADMIN_CHAT_ID: int = int(os.getenv("ADMIN_CHAT_ID", "0"))
+    ADMIN_IDS: list[int] = [
+        int(x.strip()) for x in os.getenv("ADMIN_IDS", "").split(",") if x.strip()
+    ] or ([int(os.getenv("ADMIN_CHAT_ID", "0"))] if int(os.getenv("ADMIN_CHAT_ID", "0")) else [])
     DATA_DIR: str = os.getenv("DATA_DIR", "data")
     YUKASSA_SHOP_ID: str = os.getenv("YUKASSA_SHOP_ID", "")
     YUKASSA_SECRET_KEY: str = os.getenv("YUKASSA_SECRET_KEY", "")

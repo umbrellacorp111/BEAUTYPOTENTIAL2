@@ -28,6 +28,22 @@ async def on_startup():
         if "stylist_access_until" not in cols:
             await conn.execute(text("ALTER TABLE users ADD COLUMN stylist_access_until DATETIME DEFAULT NULL"))
             logging.info("Added column 'stylist_access_until' to users table")
+
+        # Миграция новых полей stylist_applications
+        result2 = await conn.execute(text("PRAGMA table_info(stylist_applications)"))
+        app_cols = {row[1] for row in result2.all()}
+        if "name" not in app_cols:
+            await conn.execute(text("ALTER TABLE stylist_applications ADD COLUMN name VARCHAR(255) DEFAULT NULL"))
+            logging.info("Added column 'name' to stylist_applications")
+        if "age" not in app_cols:
+            await conn.execute(text("ALTER TABLE stylist_applications ADD COLUMN age INTEGER DEFAULT NULL"))
+            logging.info("Added column 'age' to stylist_applications")
+        if "goals" not in app_cols:
+            await conn.execute(text("ALTER TABLE stylist_applications ADD COLUMN goals JSON DEFAULT '[]'"))
+            logging.info("Added column 'goals' to stylist_applications")
+        if "photo_ids" not in app_cols:
+            await conn.execute(text("ALTER TABLE stylist_applications ADD COLUMN photo_ids JSON DEFAULT '[]'"))
+            logging.info("Added column 'photo_ids' to stylist_applications")
     await migrate_existing_reports()
     logging.info("Database ready")
 

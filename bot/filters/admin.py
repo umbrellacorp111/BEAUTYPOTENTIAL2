@@ -1,8 +1,13 @@
 from aiogram.filters import Filter
-from aiogram.types import Message
+from aiogram.types import Message, CallbackQuery
 from bot.config import config
 
 
 class AdminFilter(Filter):
     async def __call__(self, message: Message) -> bool:
-        return message.from_user.id == config.ADMIN_CHAT_ID
+        return message.from_user.id in config.ADMIN_IDS
+
+
+class AdminCbFilter(Filter):
+    async def __call__(self, callback: CallbackQuery) -> bool:
+        return callback.from_user.id in config.ADMIN_IDS
