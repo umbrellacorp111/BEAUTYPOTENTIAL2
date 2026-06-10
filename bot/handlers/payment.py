@@ -46,30 +46,6 @@ async def buy_stylist(callback: CallbackQuery, state: FSMContext):
     )
 
 
-@router.callback_query(F.data.startswith("pay_stars_"), StateFilter(UserState.payment_method))
-async def pay_stars(callback: CallbackQuery, state: FSMContext, bot: Bot):
-    await callback.answer()
-    idx = int(callback.data.split("_")[2])
-    if idx == 3:
-        pkg = config.STYLIST_PACKAGE
-        title = "Персональный анализ от стилиста"
-    else:
-        pkg = config.CREDIT_PACKAGES[idx]
-        title = "Пакет кредитов"
-    prices = [LabeledPrice(label=pkg["label"], amount=pkg["stars"])]
-    payload_prefix = "stylist" if idx == 3 else "credits"
-    await bot.send_invoice(
-        chat_id=callback.from_user.id,
-        title=title,
-        description=pkg["label"],
-        payload=f"{payload_prefix}_{callback.from_user.id}_{int(time.time())}",
-        provider_token="",
-        currency="XTR",
-        prices=prices,
-    )
-    await state.set_state(UserState.awaiting_payment)
-    await state.update_data(payment_method="stars", package_index=idx)
-
 
 @router.callback_query(F.data.startswith("pay_card_"), StateFilter(UserState.payment_method))
 async def pay_card(callback: CallbackQuery, state: FSMContext, bot: Bot):
@@ -118,20 +94,17 @@ async def payment_success(message: Message, state: FSMContext):
     data = await state.get_data()
     idx = data.get("package_index", 0)
     payment = message.successful_payment
-    method = "stars" if payment.currency == "XTR" else "card"
 
     if data.get("is_stylist"):
         pkg = config.STYLIST_PACKAGE
         await update_user(
             telegram_id=message.from_user.id,
-            payment_method=method,
-            payment_id=payment.provider_payment_charge_id or payment.telegram_payment_charge_id,
-            payment_amount=payment.total_amount / (1 if payment.currency == "XTR" else 100),
+            payment_method="card",
+            payment_id=payment.provider_payment_charge_id,
+            payment_amount=payment.total_amount / 100,
         )
-        currency = "★" if payment.currency == "XTR" else "₽"
-        amount = pkg["stars"] if payment.currency == "XTR" else pkg["rub"]
         await message.answer(
-            f"✅ Оплачено {amount} {currency}\n\n"
+            f"✅ Оплачено {pkg['rub']}₽\n\n"
             f"👔 Готовлю персональный разбор от стилиста..."
         )
         name = data.get("name", "")
@@ -156,18 +129,13 @@ async def payment_success(message: Message, state: FSMContext):
     balance = user.credits if user else 0
     await update_user(
         telegram_id=message.from_user.id,
-        payment_method=method,
-        payment_id=payment.provider_payment_charge_id or payment.telegram_payment_charge_id,
-        payment_amount=payment.total_amount / (1 if payment.currency == "XTR" else 100),
+        payment_method="card",
+        payment_id=payment.provider_payment_charge_id,
+        payment_amount=payment.total_amount / 100,
     )
-    if payment.currency == "XTR":
-        await message.answer(
-            PAYMENT_SUCCESS_STARS.format(stars=pkg["stars"], credits=credits, balance=balance)
-        )
-    else:
-        await message.answer(
-            PAYMENT_SUCCESS_RUB.format(rub=pkg["rub"], credits=credits, balance=balance)
-        )
+    await message.answer(
+        PAYMENT_SUCCESS_RUB.format(rub=pkg["rub"], credits=credits, balance=balance)
+    )
     if balance > 0 and await state.get_state() not in (UserState.result,):
         await state.set_state(UserState.credits_menu)
         from bot.texts.payment import USE_CREDIT_PROMPT

@@ -77,8 +77,7 @@ def credit_packages_keyboard(balance: int) -> InlineKeyboardMarkup:
 
 def payment_choice_keyboard(package_index: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="⭐ Telegram Stars", callback_data=f"pay_stars_{package_index}")
-    builder.button(text="💳 Картой", callback_data=f"pay_card_{package_index}")
+    builder.button(text="💳 Картой (ЮКасса)", callback_data=f"pay_card_{package_index}")
     builder.button(text="🔙 Назад", callback_data="pay_back")
     builder.adjust(1)
     return builder.as_markup()
